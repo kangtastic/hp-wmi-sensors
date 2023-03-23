@@ -1,0 +1,9 @@
+## Originally sourced from https://github.com/electrified/asus-wmi-sensors/raw/master/dkms.conf.am
+
+MAKE="make TARGET=${kernelver}"
+CLEAN="make clean"
+PACKAGE_NAME="hp-wmi-sensors-dkms-git"
+PACKAGE_VERSION="to be filled by make dkms"
+BUILT_MODULE_NAME[0]="hp-wmi-sensors"
+DEST_MODULE_LOCATION[0]="/kernel/drivers/hwmon/hp-wmi-sensors"
+AUTOINSTALL="yes"
