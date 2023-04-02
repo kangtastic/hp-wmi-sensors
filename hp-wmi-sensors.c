@@ -508,8 +508,8 @@ static int check_wobj(const union acpi_object *wobj, u8 *possible_states_count)
 		 * elements is a variable-length array of ACPI objects, one for
 		 * each property of the WMI object instance, except that the
 		 * strs in PossibleStates[] are flattened into this array, and
-		 * their count is found in the WMI BMOF. BMOF decoding isn't in
-		 * the kernel yet, so find the count by finding the next int.
+		 * their count is found in the WMI BMOF. We don't decode the
+		 * BMOF, so find the count by finding the next int.
 		 */
 
 		if (prop == HP_WMI_PROPERTY_CURRENT_STATE) {
@@ -531,7 +531,6 @@ static int check_wobj(const union acpi_object *wobj, u8 *possible_states_count)
 	return 0;
 }
 
-/* numeric_sensor_has_fault - check if numeric sensor is faulty */
 static int numeric_sensor_has_fault(const struct hp_wmi_numeric_sensor *nsensor)
 {
 	u32 operational_status = nsensor->operational_status;
@@ -622,14 +621,6 @@ static int classify_numeric_sensor(const struct hp_wmi_numeric_sensor *nsensor)
 	return -EINVAL;
 }
 
-/*
- * populate_numeric_sensor_from_wobj - populate a numeric sensor
- * @dev: pointer to parent device
- * @nsensor: pointer to numeric sensor struct
- * @wobj: pointer to HP_BIOSNumericSensor WMI object instance
- *
- * Returns 0 on success, or a negative error code on error.
- */
 static int
 populate_numeric_sensor_from_wobj(struct device *dev,
 				  struct hp_wmi_numeric_sensor *nsensor,
@@ -741,12 +732,7 @@ populate_numeric_sensor_from_wobj(struct device *dev,
 	return 0;
 }
 
-/*
- * update_numeric_sensor_from_wobj - update fungible sensor properties
- * @dev: pointer to parent device
- * @nsensor: pointer to numeric sensor struct
- * @wobj: pointer to HP_BIOSNumericSensor WMI object instance
- */
+/* update_numeric_sensor_from_wobj - update fungible sensor properties */
 static void
 update_numeric_sensor_from_wobj(struct device *dev,
 				struct hp_wmi_numeric_sensor *nsensor,
@@ -782,7 +768,6 @@ update_numeric_sensor_from_wobj(struct device *dev,
 	nsensor->current_reading = element->integer.value;
 }
 
-/* reset_info_history - reset a sensor's hwmon history */
 static void reset_info_history(struct hp_wmi_info *info)
 {
 	if (info->type != hwmon_fan) {
@@ -1243,7 +1228,7 @@ static int hp_wmi_hwmon_chip_write(struct hp_wmi_sensors *state,
 	case hwmon_chip_update_interval:
 		if (val && (val < HP_WMI_MIN_UPDATE_INTERVAL ||
 			    val > HP_WMI_MAX_UPDATE_INTERVAL))
-			return -EINVAL;
+			return -ERANGE;
 
 		refresh_task = &state->refresh_task;
 
