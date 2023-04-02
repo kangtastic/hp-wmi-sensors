@@ -1,0 +1,167 @@
+.. SPDX-License-Identifier: GPL-2.0-or-later
+
+Linux HP WMI Sensors Driver
+===========================
+
+Description
+-----------
+
+Hewlett-Packard business-class computers report hardware monitoring information
+via Windows Management Instrumentation (WMI). This driver exposes that
+information to the Linux ``hwmon`` subsystem, allowing familiar userspace
+utilities like ``sensors`` to gather numeric sensor readings.
+
+Installation, uninstallation, and usage
+---------------------------------------
+
+Assuming the existence of a relatively up-to-date development environment
+suitable for building Linux kernel modules, including kernel headers, a GCC
+compiler toolchain, and DKMS, simply issuing::
+
+    $ sudo make dkms
+
+should be sufficient to build and install the driver, and::
+
+    $ sudo make dkms_clean
+
+should likewise be sufficient to uninstall it.
+
+Once installed, the driver may optionally be set to load automatically upon
+system startup. Refer to the documentation for your Linux distribution for
+specific instructions.
+
+``sysfs`` interface
+-------------------
+
+When the driver is loaded, it discovers the sensors available on the current
+system and creates the following ``sysfs`` attributes as appropriate within
+``/sys/class/hwmon/hwmonX``:
+
+=============================== ======= ========================================
+Name				Perm	Description
+=============================== ======= ========================================
+curr[X]_input                   RO      Current in milliamperes (mA).
+curr[X]_label                   RO      Current sensor label.
+curr[X]_lowest                  RO      Minimum measured current.
+curr[X]_highest                 RO      Maximum measured current.
+curr[X]_reset_history           WO      Reset curr[X]_lowest and curr[X]_highest
+                                        for current sensor [X].
+curr_reset_history              WO      Reset curr[X]_lowest and curr[X]_highest
+                                        for all current sensors.
+fan[X]_input                    RO      Fan speed in RPM.
+fan[X]_label                    RO      Fan sensor label.
+fan[X]_fault                    RO      Fan sensor fault indicator.
+in[X]_input                     RO      Voltage in millivolts (mV).
+in[X]_label                     RO      Voltage sensor label.
+in[X]_lowest                    RO      Minimum measured voltage.
+in[X]_highest                   RO      Maximum measured voltage.
+in[X]_reset_history             WO      Reset in[X]_lowest and in[X]_highest
+                                        for voltage sensor [X].
+in_reset_history                WO      Reset in[X]_lowest and in[X]_highest
+                                        for all voltage sensors.
+temp[X]_input                   RO      Temperature in millivolts (mV).
+temp[X]_label                   RO      Temperature sensor label.
+temp[X]_fault                   RO      Temperature sensor fault indicator.
+temp[X]_lowest                  RO      Minimum measured temperature.
+temp[X]_highest                 RO      Maximum measured temperature.
+temp[X]_reset_history           WO      Reset temp[X]_lowest and temp[X]_highest
+                                        for temperature sensor [X].
+temp_reset_history              WO      Reset temp[X]_lowest and temp[X]_highest
+                                        for all temperature sensors.
+update_interval                 RW      Update interval in milliseconds (ms)
+                                        for all available sensors.
+=============================== ======= ========================================
+
+Here, ``X`` is some number that depends on other available sensors and on other
+system hardware components.
+
+``fault`` attributes
+  Reading the ``fault`` attribute for a sensor gives either ``0`` or ``1``. In
+  the latter case, ``1`` indicates that the sensor has encountered some issue
+  during operation, such that measurements from it should no longer be trusted.
+
+``lowest`` and ``highest`` attributes
+  All three ``input``, ``lowest`` and ``highest`` attributes for a particular
+  sensor are updated when any one of the three is read.
+
+``reset_history`` attributes
+  Only the value ``1`` may be written to a ``reset_history`` attribute.
+
+``update_interval``
+  The ``update_interval`` attribute may be set to either ``0`` (the default)
+  or to a value in milliseconds between ``5000`` (5 seconds) and ``604800000``
+  (7 days). If set to a nonzero value, the driver will periodically update the
+  ``input``, ``lowest``, and ``highest`` attributes in the background for all
+  available ``hwmon`` sensors, mimicking the behavior of some physical hardware
+  monitoring ICs.
+
+``debugfs`` interface
+---------------------
+
+The standard ``hwmon`` interface in ``sysfs`` exposes sensors of several common
+types that are connected and operating normally as of driver initialization.
+However, there are usually other sensors on the WMI side that do not meet these
+criteria. This driver therefore provides a ``debugfs`` interface in
+``/sys/kernel/debug/hp-wmi-sensors-X`` that allows read-only access to *all* HP
+WMI sensors on the current system.
+
+.. warning:: The ``debugfs`` interface is only available when the kernel is
+             compiled with option ``CONFIG_DEBUG_FS``, and its implementation
+             is subject to change without notice at any time.
+
+One numbered entry is created per sensor with the following attributes:
+
+=============================== ==========================================
+Name				Example
+=============================== ==========================================
+name                            ``CPU0 Fan``
+description                     ``Reports CPU0 fan speed``
+sensor_type                     ``Air Flow``
+sensor_type_value               ``12``
+other_sensor_type               ``(null)``
+operational_status              ``OK``
+operational_status_value        ``2``
+current_state                   ``Normal``
+possible_states                 ``Normal\nCaution\nCritical\nNot Present``
+base_units                      ``RPM``
+base_units_value                ``19``
+unit_modifier                   ``0``
+current_reading                 ``1008``
+=============================== ==========================================
+
+These represent the properties of the underlying ``HP_BIOSNumericSensor`` WMI
+object, some of which may vary in contents and formatting (but not presence or
+semantics) between systems. See [#]_ for more details.
+
+Known issues and limitations
+----------------------------
+
+- Non-numeric HP sensor types such as intrusion sensors that belong to the
+  ``HP_BIOSStateSensor`` WMI object type are not supported.
+- It is intended that the ``debugfs`` interface will facilitate supporting more
+  types in the future. Whether systems that implement more than the types
+  already supported exist in the wild is another issue.
+- A sensor's ``lowest`` and ``highest`` attributes are only updated upon reads,
+  not automatically in the background (unless an ``update_interval`` is set).
+- Using the ``update_interval`` facility incurs a small but recurring load on
+  system resources.
+
+Acknowledgements
+----------------
+
+Portions of the code are based on ``asus-wmi-sensors`` [#]_ (@electrified)
+and ``corsair-psu`` [#]_ (@wgottwalt).
+
+We sincerely thank the authors and maintainers of those projects for their
+exemplary contributions to the Linux community.
+
+References
+----------
+
+.. [#] Hewlett-Packard Development Company, L.P.,
+       "HP Client Management Interface Technical White Paper", 2005. [Online].
+       Available: https://h20331.www2.hp.com/hpsub/downloads/cmi_whitepaper.pdf
+
+.. [#] https://github.com/electrified/asus-wmi-sensors
+
+.. [#] https://github.com/wgottwalt/corsair-psu
