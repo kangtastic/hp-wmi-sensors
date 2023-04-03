@@ -47,9 +47,9 @@ When the driver is loaded, it discovers the sensors available on the current
 system and creates the following ``sysfs`` attributes as appropriate within
 ``/sys/class/hwmon/hwmonX``:
 
-======================= ======= ========================================
+======================= ======= ==========================================
 Name			Perm	Description
-======================= ======= ========================================
+======================= ======= ==========================================
 curr[X]_input           RO      Current in milliamperes (mA).
 curr[X]_label           RO      Current sensor label.
 curr[X]_lowest          RO      Minimum measured current.
@@ -69,8 +69,7 @@ in[X]_reset_history     WO      Reset in[X]_lowest and in[X]_highest
                                 for voltage sensor [X].
 in_reset_history        WO      Reset in[X]_lowest and in[X]_highest
                                 for all voltage sensors.
-temp[X]_input           RO      Temperature in millidegrees Celsius
-                                (m\ |deg|\ C).
+temp[X]_input           RO      Temperature in millidegrees Celsius (m°C).
 temp[X]_label           RO      Temperature sensor label.
 temp[X]_fault           RO      Temperature sensor fault indicator.
 temp[X]_lowest          RO      Minimum measured temperature.
@@ -81,7 +80,7 @@ temp_reset_history      WO      Reset temp[X]_lowest and temp[X]_highest
                                 for all temperature sensors.
 update_interval         RW      Update interval in milliseconds (ms)
                                 for all available sensors.
-======================= ======= ========================================
+======================= ======= ==========================================
 
 Here, ``X`` is some number that depends on other available sensors and on other
 system hardware components.
