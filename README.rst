@@ -39,9 +39,9 @@ When the driver is loaded, it discovers the sensors available on the current
 system and creates the following read-only ``sysfs`` attributes as appropriate
 within ``/sys/class/hwmon/hwmonX``:
 
-================ ==================================================
+================ ==========================================
 Name		 Description
-================ ==================================================
+================ ==========================================
 curr[X]_input    Current in milliamperes (mA).
 curr[X]_label    Current sensor label.
 fan[X]_input     Fan speed in RPM.
@@ -49,10 +49,10 @@ fan[X]_label     Fan sensor label.
 fan[X]_fault     Fan sensor fault indicator.
 in[X]_input      Voltage in millivolts (mV).
 in[X]_label      Voltage sensor label.
-temp[X]_input    Temperature in millidegrees Celsius (m\ |deg|\ C).
+temp[X]_input    Temperature in millidegrees Celsius (m°C).
 temp[X]_label    Temperature sensor label.
 temp[X]_fault    Temperature sensor fault indicator.
-================ ==================================================
+================ ==========================================
 
 Here, ``X`` is some number that depends on other available sensors and on other
 system hardware components.
