@@ -37,48 +37,48 @@ When the driver is loaded, it discovers the sensors available on the current
 system and creates the following ``sysfs`` attributes as appropriate within
 ``/sys/class/hwmon/hwmonX``:
 
-=============================== ======= ========================================
-Name				Perm	Description
-=============================== ======= ========================================
-curr[X]_input                   RO      Current in milliamperes (mA).
-curr[X]_label                   RO      Current sensor label.
-curr[X]_lowest                  RO      Minimum measured current.
-curr[X]_highest                 RO      Maximum measured current.
-curr[X]_reset_history           WO      Reset curr[X]_lowest and curr[X]_highest
-                                        for current sensor [X].
-curr_reset_history              WO      Reset curr[X]_lowest and curr[X]_highest
-                                        for all current sensors.
-fan[X]_input                    RO      Fan speed in RPM.
-fan[X]_label                    RO      Fan sensor label.
-fan[X]_fault                    RO      Fan sensor fault indicator.
-in[X]_input                     RO      Voltage in millivolts (mV).
-in[X]_label                     RO      Voltage sensor label.
-in[X]_lowest                    RO      Minimum measured voltage.
-in[X]_highest                   RO      Maximum measured voltage.
-in[X]_reset_history             WO      Reset in[X]_lowest and in[X]_highest
-                                        for voltage sensor [X].
-in_reset_history                WO      Reset in[X]_lowest and in[X]_highest
-                                        for all voltage sensors.
-temp[X]_input                   RO      Temperature in millivolts (mV).
-temp[X]_label                   RO      Temperature sensor label.
-temp[X]_fault                   RO      Temperature sensor fault indicator.
-temp[X]_lowest                  RO      Minimum measured temperature.
-temp[X]_highest                 RO      Maximum measured temperature.
-temp[X]_reset_history           WO      Reset temp[X]_lowest and temp[X]_highest
-                                        for temperature sensor [X].
-temp_reset_history              WO      Reset temp[X]_lowest and temp[X]_highest
-                                        for all temperature sensors.
-update_interval                 RW      Update interval in milliseconds (ms)
-                                        for all available sensors.
-=============================== ======= ========================================
+======================= ======= ========================================
+Name			Perm	Description
+======================= ======= ========================================
+curr[X]_input           RO      Current in milliamperes (mA).
+curr[X]_label           RO      Current sensor label.
+curr[X]_lowest          RO      Minimum measured current.
+curr[X]_highest         RO      Maximum measured current.
+curr[X]_reset_history   WO      Reset curr[X]_lowest and curr[X]_highest
+                                for current sensor [X].
+curr_reset_history      WO      Reset curr[X]_lowest and curr[X]_highest
+                                for all current sensors.
+fan[X]_input            RO      Fan speed in RPM.
+fan[X]_label            RO      Fan sensor label.
+fan[X]_fault            RO      Fan sensor fault indicator.
+in[X]_input             RO      Voltage in millivolts (mV).
+in[X]_label             RO      Voltage sensor label.
+in[X]_lowest            RO      Minimum measured voltage.
+in[X]_highest           RO      Maximum measured voltage.
+in[X]_reset_history     WO      Reset in[X]_lowest and in[X]_highest
+                                for voltage sensor [X].
+in_reset_history        WO      Reset in[X]_lowest and in[X]_highest
+                                for all voltage sensors.
+temp[X]_input           RO      Temperature in millivolts (mV).
+temp[X]_label           RO      Temperature sensor label.
+temp[X]_fault           RO      Temperature sensor fault indicator.
+temp[X]_lowest          RO      Minimum measured temperature.
+temp[X]_highest         RO      Maximum measured temperature.
+temp[X]_reset_history   WO      Reset temp[X]_lowest and temp[X]_highest
+                                for temperature sensor [X].
+temp_reset_history      WO      Reset temp[X]_lowest and temp[X]_highest
+                                for all temperature sensors.
+update_interval         RW      Update interval in milliseconds (ms)
+                                for all available sensors.
+======================= ======= ========================================
 
 Here, ``X`` is some number that depends on other available sensors and on other
 system hardware components.
 
 ``fault`` attributes
-  Reading the ``fault`` attribute for a sensor gives either ``0`` or ``1``. In
-  the latter case, ``1`` indicates that the sensor has encountered some issue
-  during operation, such that measurements from it should no longer be trusted.
+  Reading ``1`` instead of ``0`` as the ``fault`` attribute for a sensor
+  indicates that the sensor has encountered some issue during operation, and
+  that measurements from it should no longer be trusted.
 
 ``lowest`` and ``highest`` attributes
   All three ``input``, ``lowest`` and ``highest`` attributes for a particular
@@ -139,8 +139,8 @@ Known issues and limitations
 - Non-numeric HP sensor types such as intrusion sensors that belong to the
   ``HP_BIOSStateSensor`` WMI object type are not supported.
 - It is intended that the ``debugfs`` interface will facilitate supporting more
-  types in the future. Whether systems that implement more than the types
-  already supported exist in the wild is another issue.
+  types in the future. Whether systems that actually implement more than the
+  types already supported exist in the wild is unknown.
 - A sensor's ``lowest`` and ``highest`` attributes are only updated upon reads,
   not automatically in the background (unless an ``update_interval`` is set).
 - Using the ``update_interval`` facility incurs a small but recurring load on
