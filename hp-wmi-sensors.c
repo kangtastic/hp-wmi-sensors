@@ -18,7 +18,6 @@
 #include <linux/mutex.h>
 #include <linux/units.h>
 #include <linux/wmi.h>
-#include <linux/workqueue.h>
 
 /*
  * MOF definition of the HP_BIOSNumericSensor WMI object [1]:
