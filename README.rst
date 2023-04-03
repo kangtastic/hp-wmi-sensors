@@ -60,21 +60,6 @@ system hardware components.
   indicates that the sensor has encountered some issue during operation, and
   that measurements from it should no longer be trusted.
 
-``lowest`` and ``highest`` attributes
-  All three ``input``, ``lowest`` and ``highest`` attributes for a particular
-  sensor are updated when any one of the three is read.
-
-``reset_history`` attributes
-  Only the value ``1`` may be written to a ``reset_history`` attribute.
-
-``update_interval``
-  The ``update_interval`` attribute may be set to either ``0`` (the default)
-  or to a value in milliseconds between ``5000`` (5 seconds) and ``604800000``
-  (7 days). If set to a nonzero value, the driver will periodically update the
-  ``input``, ``lowest``, and ``highest`` attributes in the background for all
-  available ``hwmon`` sensors, mimicking the behavior of some physical hardware
-  monitoring ICs.
-
 ``debugfs`` interface
 ---------------------
 
