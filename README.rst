@@ -1,5 +1,7 @@
 .. SPDX-License-Identifier: GPL-2.0-or-later
 
+.. include:: <isonum.txt>
+
 Linux HP WMI Sensors Driver
 ===========================
 
@@ -37,9 +39,9 @@ When the driver is loaded, it discovers the sensors available on the current
 system and creates the following read-only ``sysfs`` attributes as appropriate
 within ``/sys/class/hwmon/hwmonX``:
 
-================ ===================================
+================ ==================================================
 Name		 Description
-================ ===================================
+================ ==================================================
 curr[X]_input    Current in milliamperes (mA).
 curr[X]_label    Current sensor label.
 fan[X]_input     Fan speed in RPM.
@@ -47,17 +49,17 @@ fan[X]_label     Fan sensor label.
 fan[X]_fault     Fan sensor fault indicator.
 in[X]_input      Voltage in millivolts (mV).
 in[X]_label      Voltage sensor label.
-temp[X]_input    Temperature in millivolts (mV).
+temp[X]_input    Temperature in millidegrees Celsius (m\ |deg|\ C).
 temp[X]_label    Temperature sensor label.
 temp[X]_fault    Temperature sensor fault indicator.
-================ ===================================
+================ ==================================================
 
 Here, ``X`` is some number that depends on other available sensors and on other
 system hardware components.
 
 ``fault`` attributes
   Reading ``1`` instead of ``0`` as the ``fault`` attribute for a sensor
-  indicates that the sensor has encountered some issue during operation, and
+  indicates that the sensor has encountered some issue during operation such
   that measurements from it should no longer be trusted.
 
 ``debugfs`` interface
@@ -92,17 +94,15 @@ current_reading                 ``1008``
 =============================== ==========================================
 
 These represent the properties of the underlying ``HP_BIOSNumericSensor`` WMI
-object, some of which may vary in contents and formatting (but not presence or
-semantics) between systems. See [#]_ for more details.
+object. Contents may vary somewhat between systems. See [#]_ for more details.
 
 Known issues and limitations
 ----------------------------
 
 - Non-numeric HP sensor types such as intrusion sensors that belong to the
   ``HP_BIOSStateSensor`` WMI object type are not supported.
-- It is intended that the ``debugfs`` interface will facilitate supporting more
-  types in the future. Whether systems that actually implement more than the
-  types already supported exist in the wild is unknown.
+- HP's WMI implementation permits sensors to claim to be of any type. Even so,
+  oddball sensor types not implemented in hwmon will not be supported.
 
 Acknowledgements
 ----------------
