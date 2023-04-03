@@ -1,5 +1,7 @@
 .. SPDX-License-Identifier: GPL-2.0-or-later
 
+.. include:: <isonum.txt>
+
 Linux HP WMI Sensors Driver
 ===========================
 
@@ -67,7 +69,8 @@ in[X]_reset_history     WO      Reset in[X]_lowest and in[X]_highest
                                 for voltage sensor [X].
 in_reset_history        WO      Reset in[X]_lowest and in[X]_highest
                                 for all voltage sensors.
-temp[X]_input           RO      Temperature in millivolts (mV).
+temp[X]_input           RO      Temperature in millidegrees Celsius
+                                (m\ |deg|\ C).
 temp[X]_label           RO      Temperature sensor label.
 temp[X]_fault           RO      Temperature sensor fault indicator.
 temp[X]_lowest          RO      Minimum measured temperature.
@@ -85,7 +88,7 @@ system hardware components.
 
 ``fault`` attributes
   Reading ``1`` instead of ``0`` as the ``fault`` attribute for a sensor
-  indicates that the sensor has encountered some issue during operation, and
+  indicates that the sensor has encountered some issue during operation such
   that measurements from it should no longer be trusted.
 
 ``lowest`` and ``highest`` attributes
@@ -138,17 +141,15 @@ current_reading                 ``1008``
 =============================== ==========================================
 
 These represent the properties of the underlying ``HP_BIOSNumericSensor`` WMI
-object, some of which may vary in contents and formatting (but not presence or
-semantics) between systems. See [#]_ for more details.
+object. Contents may vary somewhat between systems. See [#]_ for more details.
 
 Known issues and limitations
 ----------------------------
 
 - Non-numeric HP sensor types such as intrusion sensors that belong to the
   ``HP_BIOSStateSensor`` WMI object type are not supported.
-- It is intended that the ``debugfs`` interface will facilitate supporting more
-  types in the future. Whether systems that actually implement more than the
-  types already supported exist in the wild is unknown.
+- HP's WMI implementation permits sensors to claim to be of any type. Even so,
+  oddball sensor types not implemented in hwmon will not be supported.
 - A sensor's ``lowest`` and ``highest`` attributes are only updated upon reads,
   not automatically in the background (unless an ``update_interval`` is set).
 - Using the ``update_interval`` facility incurs a small but recurring load on
