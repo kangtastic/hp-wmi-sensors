@@ -11,6 +11,14 @@ via Windows Management Instrumentation (WMI). This driver exposes that
 information to the Linux ``hwmon`` subsystem, allowing familiar userspace
 utilities like ``sensors`` to gather numeric sensor readings.
 
+.. note:: This is a different version of the driver from that in the ``main``
+          branch. It includes the following extra features:
+
+          - Remembers the lowest and highest sensor readings.
+          - Can take readings in the background at a specified interval.
+          - Reports ``ValueMap`` WMI object properties via the ``debugfs``
+            interface in a much friendlier way.
+
 Installation, uninstallation, and usage
 ---------------------------------------
 
