@@ -13,7 +13,6 @@
 
 #include <linux/acpi.h>
 #include <linux/debugfs.h>
-#include <linux/devm-helpers.h>
 #include <linux/hwmon.h>
 #include <linux/jiffies.h>
 #include <linux/mutex.h>
@@ -87,229 +86,25 @@
 #define HP_WMI_MAX_PROPERTIES	   32U
 #define HP_WMI_MAX_INSTANCES	   32U
 
-#define HP_WMI_MIN_UPDATE_INTERVAL 5000L      /* 5 seconds */
-#define HP_WMI_MAX_UPDATE_INTERVAL 604800000L /* 7 days */
-
 enum hp_wmi_type {
-	HP_WMI_TYPE_UNKNOWN			   = 0,
 	HP_WMI_TYPE_OTHER			   = 1,
 	HP_WMI_TYPE_TEMPERATURE			   = 2,
 	HP_WMI_TYPE_VOLTAGE			   = 3,
 	HP_WMI_TYPE_CURRENT			   = 4,
-	HP_WMI_TYPE_TACHOMETER			   = 5,
-	HP_WMI_TYPE_COUNTER			   = 6,
-	HP_WMI_TYPE_SWITCH			   = 7,
-	HP_WMI_TYPE_LOCK			   = 8,
-	HP_WMI_TYPE_HUMIDITY			   = 9,
-	HP_WMI_TYPE_SMOKE_DETECTION		   = 10,
-	HP_WMI_TYPE_PRESENCE			   = 11,
 	HP_WMI_TYPE_AIR_FLOW			   = 12,
 };
 
-static const char *const hp_wmi_type_map[] = {
-	[HP_WMI_TYPE_UNKNOWN]			   = "Unknown",
-	[HP_WMI_TYPE_OTHER]			   = "Other",
-	[HP_WMI_TYPE_TEMPERATURE]		   = "Temperature",
-	[HP_WMI_TYPE_VOLTAGE]			   = "Voltage",
-	[HP_WMI_TYPE_CURRENT]			   = "Current",
-	[HP_WMI_TYPE_TACHOMETER]		   = "Tachometer",
-	[HP_WMI_TYPE_COUNTER]			   = "Counter",
-	[HP_WMI_TYPE_SWITCH]			   = "Switch",
-	[HP_WMI_TYPE_LOCK]			   = "Lock",
-	[HP_WMI_TYPE_HUMIDITY]			   = "Humidity",
-	[HP_WMI_TYPE_SMOKE_DETECTION]		   = "Smoke Detection",
-	[HP_WMI_TYPE_PRESENCE]			   = "Presence",
-	[HP_WMI_TYPE_AIR_FLOW]			   = "Air Flow",
-};
-
 enum hp_wmi_status {
-	HP_WMI_STATUS_UNKNOWN			   = 0,
-	HP_WMI_STATUS_OTHER			   = 1,
 	HP_WMI_STATUS_OK			   = 2,
-	HP_WMI_STATUS_DEGRADED			   = 3,
-	HP_WMI_STATUS_STRESSED			   = 4,
-	HP_WMI_STATUS_PREDICTIVE_FAILURE	   = 5,
-	HP_WMI_STATUS_ERROR			   = 6,
-	HP_WMI_STATUS_NON_RECOVERABLE_ERROR	   = 7,
-	HP_WMI_STATUS_STARTING			   = 8,
-	HP_WMI_STATUS_STOPPING			   = 9,
-	HP_WMI_STATUS_STOPPED			   = 10,
-	HP_WMI_STATUS_IN_SERVICE		   = 11,
-	HP_WMI_STATUS_NO_CONTACT		   = 12,
-	HP_WMI_STATUS_LOST_COMMUNICATION	   = 13,
-	HP_WMI_STATUS_ABORTED			   = 14,
-	HP_WMI_STATUS_DORMANT			   = 15,
-	HP_WMI_STATUS_SUPPORTING_ENTITY_IN_ERROR   = 16,
-	HP_WMI_STATUS_COMPLETED			   = 17,
-	HP_WMI_STATUS_POWER_MODE		   = 18,
-
-	/* All other values, except as below. */
-	HP_WMI_STATUS_DMTF_RESERVED		   = 19,
-
-	/* All values with the u32 high-order bit set. */
-	HP_WMI_STATUS_VENDOR_RESERVED		   = 20,
-};
-
-static const char *const hp_wmi_status_map[] = {
-	[HP_WMI_STATUS_UNKNOWN]			   = "Unknown",
-	[HP_WMI_STATUS_OTHER]			   = "Other",
-	[HP_WMI_STATUS_OK]			   = "OK",
-	[HP_WMI_STATUS_DEGRADED]		   = "Degraded",
-	[HP_WMI_STATUS_STRESSED]		   = "Stressed",
-	[HP_WMI_STATUS_PREDICTIVE_FAILURE]	   = "Predictive Failure",
-	[HP_WMI_STATUS_ERROR]			   = "Error",
-	[HP_WMI_STATUS_NON_RECOVERABLE_ERROR]	   = "Non-Recoverable Error",
-	[HP_WMI_STATUS_STARTING]		   = "Starting",
-	[HP_WMI_STATUS_STOPPING]		   = "Stopping",
-	[HP_WMI_STATUS_STOPPED]			   = "Stopped",
-	[HP_WMI_STATUS_IN_SERVICE]		   = "In Service",
-	[HP_WMI_STATUS_NO_CONTACT]		   = "No Contact",
-	[HP_WMI_STATUS_LOST_COMMUNICATION]	   = "Lost Communication",
-	[HP_WMI_STATUS_ABORTED]			   = "Aborted",
-	[HP_WMI_STATUS_DORMANT]			   = "Dormant",
-	[HP_WMI_STATUS_SUPPORTING_ENTITY_IN_ERROR] = "Supporting Entity in Error",
-	[HP_WMI_STATUS_COMPLETED]		   = "Completed",
-	[HP_WMI_STATUS_POWER_MODE]		   = "Power Mode",
-	[HP_WMI_STATUS_DMTF_RESERVED]		   = "DMTF Reserved",
-	[HP_WMI_STATUS_VENDOR_RESERVED]		   = "Vendor Reserved",
 };
 
 enum hp_wmi_units {
-	HP_WMI_UNITS_UNKNOWN			   = 0,
-	HP_WMI_UNITS_OTHER			   = 1,
 	HP_WMI_UNITS_DEGREES_C			   = 2,
 	HP_WMI_UNITS_DEGREES_F			   = 3,
 	HP_WMI_UNITS_DEGREES_K			   = 4,
 	HP_WMI_UNITS_VOLTS			   = 5,
 	HP_WMI_UNITS_AMPS			   = 6,
-	HP_WMI_UNITS_WATTS			   = 7,
-	HP_WMI_UNITS_JOULES			   = 8,
-	HP_WMI_UNITS_COULOMBS			   = 9,
-	HP_WMI_UNITS_VA				   = 10,
-	HP_WMI_UNITS_NITS			   = 11,
-	HP_WMI_UNITS_LUMENS			   = 12,
-	HP_WMI_UNITS_LUX			   = 13,
-	HP_WMI_UNITS_CANDELAS			   = 14,
-	HP_WMI_UNITS_KPA			   = 15,
-	HP_WMI_UNITS_PSI			   = 16,
-	HP_WMI_UNITS_NEWTONS			   = 17,
-	HP_WMI_UNITS_CFM			   = 18,
 	HP_WMI_UNITS_RPM			   = 19,
-	HP_WMI_UNITS_HERTZ			   = 20,
-	HP_WMI_UNITS_SECONDS			   = 21,
-	HP_WMI_UNITS_MINUTES			   = 22,
-	HP_WMI_UNITS_HOURS			   = 23,
-	HP_WMI_UNITS_DAYS			   = 24,
-	HP_WMI_UNITS_WEEKS			   = 25,
-	HP_WMI_UNITS_MILS			   = 26,
-	HP_WMI_UNITS_INCHES			   = 27,
-	HP_WMI_UNITS_FEET			   = 28,
-	HP_WMI_UNITS_CUBIC_INCHES		   = 29,
-	HP_WMI_UNITS_CUBIC_FEET			   = 30,
-	HP_WMI_UNITS_METERS			   = 31,
-	HP_WMI_UNITS_CUBIC_CENTIMETERS		   = 32,
-	HP_WMI_UNITS_CUBIC_METERS		   = 33,
-	HP_WMI_UNITS_LITERS			   = 34,
-	HP_WMI_UNITS_FLUID_OUNCES		   = 35,
-	HP_WMI_UNITS_RADIANS			   = 36,
-	HP_WMI_UNITS_STERADIANS			   = 37,
-	HP_WMI_UNITS_REVOLUTIONS		   = 38,
-	HP_WMI_UNITS_CYCLES			   = 39,
-	HP_WMI_UNITS_GRAVITIES			   = 40,
-	HP_WMI_UNITS_OUNCES			   = 41,
-	HP_WMI_UNITS_POUNDS			   = 42,
-	HP_WMI_UNITS_FOOT_POUNDS		   = 43,
-	HP_WMI_UNITS_OUNCE_INCHES		   = 44,
-	HP_WMI_UNITS_GAUSS			   = 45,
-	HP_WMI_UNITS_GILBERTS			   = 46,
-	HP_WMI_UNITS_HENRIES			   = 47,
-	HP_WMI_UNITS_FARADS			   = 48,
-	HP_WMI_UNITS_OHMS			   = 49,
-	HP_WMI_UNITS_SIEMENS			   = 50,
-	HP_WMI_UNITS_MOLES			   = 51,
-	HP_WMI_UNITS_BECQUERELS			   = 52,
-	HP_WMI_UNITS_PPM			   = 53,
-	HP_WMI_UNITS_DECIBELS			   = 54,
-	HP_WMI_UNITS_DBA			   = 55,
-	HP_WMI_UNITS_DBC			   = 56,
-	HP_WMI_UNITS_GRAYS			   = 57,
-	HP_WMI_UNITS_SIEVERTS			   = 58,
-	HP_WMI_UNITS_COLOR_TEMPERATURE_DEGREES_K   = 59,
-	HP_WMI_UNITS_BITS			   = 60,
-	HP_WMI_UNITS_BYTES			   = 61,
-	HP_WMI_UNITS_WORDS			   = 62,
-	HP_WMI_UNITS_DOUBLEWORDS		   = 63,
-	HP_WMI_UNITS_QUADWORDS			   = 64,
-	HP_WMI_UNITS_PERCENTAGE			   = 65,
-};
-
-static const char *const hp_wmi_units_map[] = {
-	[HP_WMI_UNITS_UNKNOWN]			   = "Unknown",
-	[HP_WMI_UNITS_OTHER]			   = "Other",
-	[HP_WMI_UNITS_DEGREES_C]		   = "Degrees C",
-	[HP_WMI_UNITS_DEGREES_F]		   = "Degrees F",
-	[HP_WMI_UNITS_DEGREES_K]		   = "Degrees K",
-	[HP_WMI_UNITS_VOLTS]			   = "Volts",
-	[HP_WMI_UNITS_AMPS]			   = "Amps",
-	[HP_WMI_UNITS_WATTS]			   = "Watts",
-	[HP_WMI_UNITS_JOULES]			   = "Joules",
-	[HP_WMI_UNITS_COULOMBS]			   = "Coulombs",
-	[HP_WMI_UNITS_VA]			   = "VA",
-	[HP_WMI_UNITS_NITS]			   = "Nits",
-	[HP_WMI_UNITS_LUMENS]			   = "Lumens",
-	[HP_WMI_UNITS_LUX]			   = "Lux",
-	[HP_WMI_UNITS_CANDELAS]			   = "Candelas",
-	[HP_WMI_UNITS_KPA]			   = "kPa",
-	[HP_WMI_UNITS_PSI]			   = "PSI",
-	[HP_WMI_UNITS_NEWTONS]			   = "Newtons",
-	[HP_WMI_UNITS_CFM]			   = "CFM",
-	[HP_WMI_UNITS_RPM]			   = "RPM",
-	[HP_WMI_UNITS_HERTZ]			   = "Hertz",
-	[HP_WMI_UNITS_SECONDS]			   = "Seconds",
-	[HP_WMI_UNITS_MINUTES]			   = "Minutes",
-	[HP_WMI_UNITS_HOURS]			   = "Hours",
-	[HP_WMI_UNITS_DAYS]			   = "Days",
-	[HP_WMI_UNITS_WEEKS]			   = "Weeks",
-	[HP_WMI_UNITS_MILS]			   = "Mils",
-	[HP_WMI_UNITS_INCHES]			   = "Inches",
-	[HP_WMI_UNITS_FEET]			   = "Feet",
-	[HP_WMI_UNITS_CUBIC_INCHES]		   = "Cubic Inches",
-	[HP_WMI_UNITS_CUBIC_FEET]		   = "Cubic Feet",
-	[HP_WMI_UNITS_METERS]			   = "Meters",
-	[HP_WMI_UNITS_CUBIC_CENTIMETERS]	   = "Cubic Centimeters",
-	[HP_WMI_UNITS_CUBIC_METERS]		   = "Cubic Meters",
-	[HP_WMI_UNITS_LITERS]			   = "Liters",
-	[HP_WMI_UNITS_FLUID_OUNCES]		   = "Fluid Ounces",
-	[HP_WMI_UNITS_RADIANS]			   = "Radians",
-	[HP_WMI_UNITS_STERADIANS]		   = "Steradians",
-	[HP_WMI_UNITS_REVOLUTIONS]		   = "Revolutions",
-	[HP_WMI_UNITS_CYCLES]			   = "Cycles",
-	[HP_WMI_UNITS_GRAVITIES]		   = "Gravities",
-	[HP_WMI_UNITS_OUNCES]			   = "Ounces",
-	[HP_WMI_UNITS_POUNDS]			   = "Pounds",
-	[HP_WMI_UNITS_FOOT_POUNDS]		   = "Foot-Pounds",
-	[HP_WMI_UNITS_OUNCE_INCHES]		   = "Ounce-Inches",
-	[HP_WMI_UNITS_GAUSS]			   = "Gauss",
-	[HP_WMI_UNITS_GILBERTS]			   = "Gilberts",
-	[HP_WMI_UNITS_HENRIES]			   = "Henries",
-	[HP_WMI_UNITS_FARADS]			   = "Farads",
-	[HP_WMI_UNITS_OHMS]			   = "Ohms",
-	[HP_WMI_UNITS_SIEMENS]			   = "Siemens",
-	[HP_WMI_UNITS_MOLES]			   = "Moles",
-	[HP_WMI_UNITS_BECQUERELS]		   = "Becquerels",
-	[HP_WMI_UNITS_PPM]			   = "PPM (parts/million)",
-	[HP_WMI_UNITS_DECIBELS]			   = "Decibels",
-	[HP_WMI_UNITS_DBA]			   = "DbA",
-	[HP_WMI_UNITS_DBC]			   = "DbC",
-	[HP_WMI_UNITS_GRAYS]			   = "Grays",
-	[HP_WMI_UNITS_SIEVERTS]			   = "Sieverts",
-	[HP_WMI_UNITS_COLOR_TEMPERATURE_DEGREES_K] = "Color Temperature Degrees K",
-	[HP_WMI_UNITS_BITS]			   = "Bits",
-	[HP_WMI_UNITS_BYTES]			   = "Bytes",
-	[HP_WMI_UNITS_WORDS]			   = "Words (data)",
-	[HP_WMI_UNITS_DOUBLEWORDS]		   = "DoubleWords",
-	[HP_WMI_UNITS_QUADWORDS]		   = "QuadWords",
-	[HP_WMI_UNITS_PERCENTAGE]		   = "Percentage",
 };
 
 enum hp_wmi_property {
@@ -345,24 +140,12 @@ static const enum hwmon_sensor_types hp_wmi_hwmon_type_map[] = {
 	[HP_WMI_TYPE_AIR_FLOW]			   = hwmon_fan,
 };
 
-static u32 hp_wmi_hwmon_attributes[hwmon_max] = {
-	[hwmon_chip] = HWMON_C_UPDATE_INTERVAL,
-
-	[hwmon_temp] = HWMON_T_INPUT | HWMON_T_LOWEST  |
-		       HWMON_T_LABEL | HWMON_T_HIGHEST |
-		       HWMON_T_FAULT | HWMON_T_RESET_HISTORY,
-
-	[hwmon_in]   = HWMON_I_INPUT | HWMON_I_LOWEST  |
-		       HWMON_I_LABEL | HWMON_I_HIGHEST |
-				       HWMON_I_RESET_HISTORY,
-
-	[hwmon_curr] = HWMON_C_INPUT | HWMON_C_LOWEST  |
-		       HWMON_C_LABEL | HWMON_C_HIGHEST |
-				       HWMON_C_RESET_HISTORY,
-
-	[hwmon_fan]  = HWMON_F_INPUT |
-		       HWMON_F_LABEL |
-		       HWMON_F_FAULT,
+static const u32 hp_wmi_hwmon_attributes[hwmon_max] = {
+	[hwmon_chip] = HWMON_C_REGISTER_TZ,
+	[hwmon_temp] = HWMON_T_INPUT | HWMON_T_LABEL | HWMON_T_FAULT,
+	[hwmon_in]   = HWMON_I_INPUT | HWMON_I_LABEL,
+	[hwmon_curr] = HWMON_C_INPUT | HWMON_C_LABEL,
+	[hwmon_fan]  = HWMON_F_INPUT | HWMON_F_LABEL | HWMON_F_FAULT,
 };
 
 /*
@@ -392,8 +175,6 @@ struct hp_wmi_numeric_sensor {
  * @is_active: whether the following fields are valid
  * @type: its hwmon sensor type
  * @cached_val: current sensor reading value, scaled for hwmon
- * @lo_val: historical minimum reading
- * @hi_val: historical maximum reading
  * @last_updated: when these readings were last updated
  */
 struct hp_wmi_info {
@@ -403,21 +184,13 @@ struct hp_wmi_info {
 	bool is_active;
 	enum hwmon_sensor_types type;
 	long cached_val;
-	long lo_val;
-	long hi_val;
 	unsigned long last_updated; /* in jiffies */
-};
-
-struct hp_wmi_refresh_task {
-	struct delayed_work dwork;
-	long update_interval; /* in milliseconds */
 };
 
 /*
  * struct hp_wmi_sensors - driver state
  * @wdev: pointer to the parent WMI device
  * @debugfs: root directory in debugfs
- * @refresh_task: background refresh task
  * @info: sensor info structs for all sensors visible in WMI
  * @info_map: access info structs by hwmon type and channel number
  * @count: count of all sensors visible in WMI
@@ -427,11 +200,8 @@ struct hp_wmi_refresh_task {
 struct hp_wmi_sensors {
 	struct wmi_device *wdev;
 	struct dentry *debugfs;
-	struct hp_wmi_refresh_task refresh_task;
-
 	struct hp_wmi_info info[HP_WMI_MAX_INSTANCES];
 	struct hp_wmi_info **info_map[hwmon_max];
-
 	u8 count;
 	u8 channel_count[hwmon_max];
 
@@ -768,14 +538,6 @@ update_numeric_sensor_from_wobj(struct device *dev,
 	nsensor->current_reading = element->integer.value;
 }
 
-static void reset_info_history(struct hp_wmi_info *info)
-{
-	if (info->type != hwmon_fan) {
-		info->lo_val = info->cached_val;
-		info->hi_val = info->cached_val;
-	}
-}
-
 /*
  * interpret_info - interpret sensor for hwmon
  * @info: pointer to sensor info struct
@@ -787,12 +549,6 @@ static void interpret_info(struct hp_wmi_info *info)
 	const struct hp_wmi_numeric_sensor *nsensor = &info->nsensor;
 
 	info->cached_val = scale_numeric_sensor(nsensor);
-
-	if (info->type != hwmon_fan) {
-		info->lo_val = min(info->lo_val, info->cached_val);
-		info->hi_val = max(info->hi_val, info->cached_val);
-	}
-
 	info->last_updated = jiffies;
 }
 
@@ -830,49 +586,6 @@ out_free_wobj:
 	return ret;
 }
 
-/* hp_wmi_sensors_refresh_task - refresh sensors in background */
-static void hp_wmi_sensors_refresh_task(struct work_struct *work)
-{
-	struct hp_wmi_refresh_task *refresh_task;
-	struct hp_wmi_sensors *state;
-	struct hp_wmi_info *info;
-	long update_interval;
-	struct device *dev;
-	int err;
-	u8 i;
-
-	state = container_of(work, struct hp_wmi_sensors,
-			     refresh_task.dwork.work);
-
-	dev = &state->wdev->dev;
-	info = state->info;
-	refresh_task = &state->refresh_task;
-	update_interval = refresh_task->update_interval;
-
-	mutex_lock(&state->lock);
-
-	for (i = 0; i < state->count; i++, info++) {
-		if (!info->is_active)
-			continue;
-
-		err = hp_wmi_update_info(state, info);
-		if (!err) {
-			dev_err(dev, "Error %d while updating sensor %u (%s), background updates disabled\n",
-				err, info->instance, info->nsensor.name);
-
-			refresh_task->update_interval = 0;
-
-			goto out_unlock;
-		}
-	}
-
-	schedule_delayed_work(&refresh_task->dwork,
-			      msecs_to_jiffies(update_interval));
-
-out_unlock:
-	mutex_unlock(&state->lock);
-}
-
 #if CONFIG_DEBUG_FS
 
 static int basic_string_show(struct seq_file *seqf, void *ignored)
@@ -885,13 +598,11 @@ static int basic_string_show(struct seq_file *seqf, void *ignored)
 }
 DEFINE_SHOW_ATTRIBUTE(basic_string);
 
-static int fungible_show(struct seq_file *seqf, enum hp_wmi_property prop,
-			 int show_operational_status_value)
+static int fungible_show(struct seq_file *seqf, enum hp_wmi_property prop)
 {
 	struct hp_wmi_numeric_sensor *nsensor;
 	struct hp_wmi_sensors *state;
 	struct hp_wmi_info *info;
-	u32 operational_status;
 	int err;
 
 	switch (prop) {
@@ -937,20 +648,7 @@ static int fungible_show(struct seq_file *seqf, enum hp_wmi_property prop,
 
 	switch (prop) {
 	case HP_WMI_PROPERTY_OPERATIONAL_STATUS:
-		operational_status = nsensor->operational_status;
-
-		if (show_operational_status_value) {
-			seq_printf(seqf, "%u\n", operational_status);
-			break;
-		}
-
-		/* For unknown values, ensure a valid index into the map. */
-		if (operational_status & BIT(31))
-			operational_status = HP_WMI_STATUS_VENDOR_RESERVED;
-		else if (operational_status > HP_WMI_STATUS_POWER_MODE)
-			operational_status = HP_WMI_STATUS_DMTF_RESERVED;
-
-		seq_printf(seqf, "%s\n", hp_wmi_status_map[operational_status]);
+		seq_printf(seqf, "%u\n", nsensor->operational_status);
 		break;
 
 	case HP_WMI_PROPERTY_CURRENT_STATE:
@@ -974,19 +672,13 @@ static int fungible_show(struct seq_file *seqf, enum hp_wmi_property prop,
 
 static int operational_status_show(struct seq_file *seqf, void *ignored)
 {
-	return fungible_show(seqf, HP_WMI_PROPERTY_OPERATIONAL_STATUS, 0);
+	return fungible_show(seqf, HP_WMI_PROPERTY_OPERATIONAL_STATUS);
 }
 DEFINE_SHOW_ATTRIBUTE(operational_status);
 
-static int operational_status_value_show(struct seq_file *seqf, void *ignored)
-{
-	return fungible_show(seqf, HP_WMI_PROPERTY_OPERATIONAL_STATUS, 1);
-}
-DEFINE_SHOW_ATTRIBUTE(operational_status_value);
-
 static int current_state_show(struct seq_file *seqf, void *ignored)
 {
-	return fungible_show(seqf, HP_WMI_PROPERTY_CURRENT_STATE, 0);
+	return fungible_show(seqf, HP_WMI_PROPERTY_CURRENT_STATE);
 }
 DEFINE_SHOW_ATTRIBUTE(current_state);
 
@@ -1004,13 +696,13 @@ DEFINE_SHOW_ATTRIBUTE(possible_states);
 
 static int unit_modifier_show(struct seq_file *seqf, void *ignored)
 {
-	return fungible_show(seqf, HP_WMI_PROPERTY_UNIT_MODIFIER, 0);
+	return fungible_show(seqf, HP_WMI_PROPERTY_UNIT_MODIFIER);
 }
 DEFINE_SHOW_ATTRIBUTE(unit_modifier);
 
 static int current_reading_show(struct seq_file *seqf, void *ignored)
 {
-	return fungible_show(seqf, HP_WMI_PROPERTY_CURRENT_READING, 0);
+	return fungible_show(seqf, HP_WMI_PROPERTY_CURRENT_READING);
 }
 DEFINE_SHOW_ATTRIBUTE(current_reading);
 
@@ -1028,8 +720,6 @@ static void hp_wmi_debugfs_init(struct hp_wmi_sensors *state)
 	struct hp_wmi_numeric_sensor *nsensor;
 	char buf[HP_WMI_MAX_STR_SIZE];
 	struct dentry *dir;
-	u32 sensor_type;
-	u32 base_units;
 	int err;
 	u8 i;
 
@@ -1052,13 +742,6 @@ static void hp_wmi_debugfs_init(struct hp_wmi_sensors *state)
 		scnprintf(buf, sizeof(buf), "%u", i);
 		dir = debugfs_create_dir(buf, state->debugfs);
 
-		/*
-		 * Below, for ValueMap properties better reported as strings,
-		 * we may need to adjust values before using them to index into
-		 * the relevant string maps. The original values will still be
-		 * made available so as to not lose information.
-		 */
-
 		debugfs_create_file("name", 0444, dir,
 				    (void *)nsensor->name,
 				    &basic_string_fops);
@@ -1067,13 +750,7 @@ static void hp_wmi_debugfs_init(struct hp_wmi_sensors *state)
 				    (void *)nsensor->description,
 				    &basic_string_fops);
 
-		sensor_type = nsensor->sensor_type;
-		if (sensor_type > HP_WMI_TYPE_AIR_FLOW)
-			sensor_type = HP_WMI_TYPE_UNKNOWN;
-		debugfs_create_file("sensor_type", 0444, dir,
-				    (void *)hp_wmi_type_map[sensor_type],
-				    &basic_string_fops);
-		debugfs_create_u32("sensor_type_value", 0444, dir,
+		debugfs_create_u32("sensor_type", 0444, dir,
 				   &nsensor->sensor_type);
 
 		debugfs_create_file("other_sensor_type", 0444, dir,
@@ -1081,34 +758,25 @@ static void hp_wmi_debugfs_init(struct hp_wmi_sensors *state)
 				    &basic_string_fops);
 
 		debugfs_create_file("operational_status", 0444, dir,
-				    (void *)&nsensor->operational_status,
+				    &nsensor->operational_status,
 				    &operational_status_fops);
-		debugfs_create_file("operational_status_value", 0444, dir,
-				    (void *)&nsensor->operational_status,
-				    &operational_status_value_fops);
 
 		debugfs_create_file("current_state", 0444, dir,
 				    (void *)&nsensor->current_state,
 				    &current_state_fops);
 
 		debugfs_create_file("possible_states", 0444, dir,
-				    (void *)nsensor, &possible_states_fops);
+				    nsensor, &possible_states_fops);
 
-		base_units = nsensor->base_units;
-		if (base_units > HP_WMI_UNITS_PERCENTAGE)
-			base_units = HP_WMI_UNITS_UNKNOWN;
-		debugfs_create_file("base_units", 0444, dir,
-				    (void *)hp_wmi_units_map[base_units],
-				    &basic_string_fops);
-		debugfs_create_u32("base_units_value", 0444, dir,
-				   (void *)&nsensor->base_units);
+		debugfs_create_u32("base_units", 0444, dir,
+				   &nsensor->base_units);
 
 		debugfs_create_file("unit_modifier", 0444, dir,
-				    (void *)&nsensor->unit_modifier,
+				    &nsensor->unit_modifier,
 				    &unit_modifier_fops);
 
 		debugfs_create_file("current_reading", 0444, dir,
-				    (void *)&nsensor->current_reading,
+				    &nsensor->current_reading,
 				    &current_reading_fops);
 	}
 }
@@ -1127,28 +795,8 @@ static umode_t hp_wmi_hwmon_is_visible(const void *drvdata,
 {
 	const struct hp_wmi_sensors *state = drvdata;
 
-	if (type == hwmon_chip) {
-		switch (attr) {
-		case hwmon_chip_temp_reset_history:
-		case hwmon_chip_curr_reset_history:
-		case hwmon_chip_in_reset_history:
-			return 0200;
-
-		case hwmon_chip_update_interval:
-			return 0644;
-
-		default:
-			return 0;
-		}
-	}
-
 	if (!state->info_map[type] || !state->info_map[type][channel])
 		return 0;
-
-	if ((type == hwmon_temp && attr == hwmon_temp_reset_history) ||
-	    (type == hwmon_curr && attr == hwmon_curr_reset_history) ||
-	    (type == hwmon_in   && attr == hwmon_in_reset_history))
-		return 0200;
 
 	return 0444;
 }
@@ -1160,17 +808,6 @@ static int hp_wmi_hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 	const struct hp_wmi_numeric_sensor *nsensor;
 	struct hp_wmi_info *info;
 	int err;
-
-	if (type == hwmon_chip) {
-		switch (attr) {
-		case hwmon_chip_update_interval:
-			*val = state->refresh_task.update_interval;
-			return 0;
-
-		default:
-			return -EOPNOTSUPP;
-		}
-	}
 
 	info = state->info_map[type][channel];
 	nsensor = &info->nsensor;
@@ -1188,16 +825,6 @@ static int hp_wmi_hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 		 (type == hwmon_fan  && attr == hwmon_fan_fault))
 		*val = numeric_sensor_has_fault(nsensor);
 
-	else if ((type == hwmon_temp && attr == hwmon_temp_lowest) ||
-		 (type == hwmon_curr && attr == hwmon_curr_lowest) ||
-		 (type == hwmon_in   && attr == hwmon_in_lowest))
-		*val = info->lo_val;
-
-	else if ((type == hwmon_temp && attr == hwmon_temp_highest) ||
-		 (type == hwmon_curr && attr == hwmon_curr_highest) ||
-		 (type == hwmon_in   && attr == hwmon_in_highest))
-		*val = info->hi_val;
-
 	else
 		*val = info->cached_val;
 
@@ -1213,86 +840,6 @@ static int hp_wmi_hwmon_read_string(struct device *dev,
 
 	info = state->info_map[type][channel];
 	*str = info->nsensor.name;
-
-	return 0;
-}
-
-static int hp_wmi_hwmon_chip_write(struct hp_wmi_sensors *state,
-				   u32 attr, long val)
-{
-	struct hp_wmi_refresh_task *refresh_task;
-	enum hwmon_sensor_types type;
-	u8 i;
-
-	switch (attr) {
-	case hwmon_chip_update_interval:
-		if (val && (val < HP_WMI_MIN_UPDATE_INTERVAL ||
-			    val > HP_WMI_MAX_UPDATE_INTERVAL))
-			return -ERANGE;
-
-		refresh_task = &state->refresh_task;
-
-		cancel_delayed_work_sync(&refresh_task->dwork);
-
-		mutex_lock(&state->lock);
-
-		refresh_task->update_interval = val;
-
-		if (val)
-			schedule_delayed_work(&refresh_task->dwork, 0);
-
-		mutex_unlock(&state->lock);
-
-		return 0;
-
-	case hwmon_chip_temp_reset_history:
-		type = hwmon_temp;
-		break;
-
-	case hwmon_chip_curr_reset_history:
-		type = hwmon_curr;
-		break;
-
-	case hwmon_chip_in_reset_history:
-		type = hwmon_in;
-		break;
-
-	default:
-		return -EOPNOTSUPP;
-	}
-
-	if (val != 1)
-		return -EINVAL;
-
-	mutex_lock(&state->lock);
-
-	for (i = 0; i < state->channel_count[type]; i++)
-		reset_info_history(state->info_map[type][i]);
-
-	mutex_unlock(&state->lock);
-
-	return 0;
-}
-
-static int hp_wmi_hwmon_write(struct device *dev, enum hwmon_sensor_types type,
-			      u32 attr, int channel, long val)
-{
-	struct hp_wmi_sensors *state = dev_get_drvdata(dev);
-	struct hp_wmi_info *info;
-
-	if (type == hwmon_chip)
-		return hp_wmi_hwmon_chip_write(state, attr, val);
-
-	if (val != 1)
-		return -EINVAL;
-
-	info = state->info_map[type][channel];
-
-	mutex_lock(&state->lock);
-
-	reset_info_history(info);
-
-	mutex_unlock(&state->lock);
 
 	return 0;
 }
@@ -1319,7 +866,6 @@ static const struct hwmon_ops hp_wmi_hwmon_ops = {
 	.is_visible  = hp_wmi_hwmon_is_visible,
 	.read	     = hp_wmi_hwmon_read,
 	.read_string = hp_wmi_hwmon_read_string,
-	.write	     = hp_wmi_hwmon_write,
 };
 
 static struct hwmon_chip_info hp_wmi_chip_info = {
@@ -1371,8 +917,6 @@ static int hp_wmi_sensors_init(struct hp_wmi_sensors *state)
 
 		info->is_active = true;
 		info->type = type;
-		info->lo_val = LONG_MAX;
-		info->hi_val = LONG_MIN;
 
 		interpret_info(info);
 
@@ -1397,8 +941,10 @@ out_free_wobj:
 	if (!channel)
 		return 0; /* Not an error, but debugfs only. */
 
-	channel_count[hwmon_chip] = 1;
-	type_count++;
+	if (channel_count[hwmon_temp]) {
+		channel_count[hwmon_chip] = 1;
+		type_count++;
+	}
 
 	memcpy(state->channel_count, channel_count, sizeof(channel_count));
 
@@ -1423,27 +969,6 @@ out_free_wobj:
 		if (!channel_count[--type])
 			continue;
 
-		switch (type) {
-		case hwmon_temp:
-			hp_wmi_hwmon_attributes[hwmon_chip] |=
-				HWMON_C_TEMP_RESET_HISTORY |
-				HWMON_C_REGISTER_TZ;
-			break;
-
-		case hwmon_curr:
-			hp_wmi_hwmon_attributes[hwmon_chip] |=
-				HWMON_C_CURR_RESET_HISTORY;
-			break;
-
-		case hwmon_in:
-			hp_wmi_hwmon_attributes[hwmon_chip] |=
-				HWMON_C_IN_RESET_HISTORY;
-			break;
-
-		default:
-			break;
-		}
-
 		err = add_channel_info(dev, channel_info,
 				       channel_count[type], type);
 		if (err)
@@ -1467,11 +992,7 @@ out_free_wobj:
 	hwdev = devm_hwmon_device_register_with_info(dev, "hp_wmi_sensors",
 						     state, &hp_wmi_chip_info,
 						     NULL);
-	if (IS_ERR(hwdev))
-		return PTR_ERR(hwdev);
-
-	return devm_delayed_work_autocancel(dev, &state->refresh_task.dwork,
-					    hp_wmi_sensors_refresh_task);
+	return PTR_ERR_OR_ZERO(hwdev);
 }
 
 static int hp_wmi_sensors_probe(struct wmi_device *wdev, const void *context)
