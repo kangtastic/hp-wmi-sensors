@@ -337,9 +337,10 @@ static long scale_numeric_sensor(const struct hp_wmi_numeric_sensor *nsensor)
 	if (sensor_type == HP_WMI_TYPE_TEMPERATURE) {
 		switch (base_units) {
 		case HP_WMI_UNITS_DEGREES_F:
-			val -= 32 * MILLI;
-			val = val <= LONG_MAX / 5 ? (val * 5) / 9 :
-						    (val / 9) * 5;
+			val -= MILLI * 32;
+			val = val <= LONG_MAX / 5 ?
+				      DIV_ROUND_CLOSEST(val * 5, 9) :
+				      DIV_ROUND_CLOSEST(val, 9) * 5;
 			break;
 
 		case HP_WMI_UNITS_DEGREES_K:
