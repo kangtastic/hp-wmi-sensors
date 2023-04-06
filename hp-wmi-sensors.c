@@ -956,11 +956,8 @@ out_free_wobj:
 
 	hp_wmi_chip_info.info = ptr_channel_info;
 
-	channel_info += type_count - 1;
-	ptr_channel_info += type_count - 1;
-
-	for (type = hwmon_max; type > hwmon_chip;) {
-		if (!channel_count[--type])
+	for (type = hwmon_chip; type < hwmon_max; type++) {
+		if (!channel_count[type])
 			continue;
 
 		err = add_channel_info(dev, channel_info,
@@ -968,7 +965,7 @@ out_free_wobj:
 		if (err)
 			return err;
 
-		*ptr_channel_info-- = channel_info--;
+		*ptr_channel_info++ = channel_info++;
 
 		state->info_map[type] = devm_kcalloc(dev, channel_count[type],
 						     sizeof(*state->info_map),
