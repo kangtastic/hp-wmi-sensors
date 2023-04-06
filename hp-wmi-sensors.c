@@ -569,6 +569,8 @@ static int hp_wmi_update_info(struct hp_wmi_sensors *state,
 	int ret = 0;
 
 	if (time_after(jiffies, info->last_updated + HZ)) {
+		mutex_lock(&state->lock);
+
 		wobj = hp_wmi_get_wobj(state, instance);
 		if (!wobj) {
 			ret = -EIO;
@@ -581,6 +583,8 @@ static int hp_wmi_update_info(struct hp_wmi_sensors *state,
 
 out_free_wobj:
 		kfree(wobj);
+
+		mutex_unlock(&state->lock);
 	}
 
 	return ret;
@@ -637,12 +641,7 @@ static int fungible_show(struct seq_file *seqf, enum hp_wmi_property prop)
 	info = container_of(nsensor, struct hp_wmi_info, nsensor);
 	state = container_of(info, struct hp_wmi_sensors, info[info->instance]);
 
-	mutex_lock(&state->lock);
-
 	err = hp_wmi_update_info(state, info);
-
-	mutex_unlock(&state->lock);
-
 	if (err)
 		return err;
 
@@ -812,12 +811,7 @@ static int hp_wmi_hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 	info = state->info_map[type][channel];
 	nsensor = &info->nsensor;
 
-	mutex_lock(&state->lock);
-
 	err = hp_wmi_update_info(state, info);
-
-	mutex_unlock(&state->lock);
-
 	if (err)
 		return err;
 
