@@ -189,7 +189,6 @@ struct hp_wmi_info {
 /*
  * struct hp_wmi_sensors - driver state
  * @wdev: pointer to the parent WMI device
- * @debugfs: root directory in debugfs
  * @info: sensor info structs for all sensors visible in WMI
  * @info_map: access info structs by hwmon type and channel number
  * @count: count of all sensors visible in WMI
@@ -198,7 +197,6 @@ struct hp_wmi_info {
  */
 struct hp_wmi_sensors {
 	struct wmi_device *wdev;
-	struct dentry *debugfs;
 	struct hp_wmi_info info[HP_WMI_MAX_INSTANCES];
 	struct hp_wmi_info **info_map[hwmon_max];
 	u8 count;
@@ -730,6 +728,7 @@ static void hp_wmi_debugfs_init(struct hp_wmi_sensors *state)
 	struct hp_wmi_info *info = state->info;
 	struct hp_wmi_numeric_sensor *nsensor;
 	char buf[HP_WMI_MAX_STR_SIZE];
+	struct dentry *debugfs;
 	struct dentry *dir;
 	int err;
 	u8 i;
@@ -737,13 +736,13 @@ static void hp_wmi_debugfs_init(struct hp_wmi_sensors *state)
 	/* dev_name() gives a not-very-friendly GUID for WMI devices. */
 	scnprintf(buf, sizeof(buf), "%s-%u", "hp-wmi-sensors", dev->id);
 
-	state->debugfs = debugfs_create_dir(buf, NULL);
-	if (IS_ERR(state->debugfs))
+	debugfs = debugfs_create_dir(buf, NULL);
+	if (IS_ERR(debugfs))
 		return;
 
-	err = devm_add_action(dev, hp_wmi_devm_debugfs_remove, state->debugfs);
+	err = devm_add_action(dev, hp_wmi_devm_debugfs_remove, debugfs);
 	if (err) {
-		debugfs_remove(state->debugfs);
+		debugfs_remove(debugfs);
 		return;
 	}
 
@@ -751,7 +750,7 @@ static void hp_wmi_debugfs_init(struct hp_wmi_sensors *state)
 		nsensor = &info->nsensor;
 
 		scnprintf(buf, sizeof(buf), "%u", i);
-		dir = debugfs_create_dir(buf, state->debugfs);
+		dir = debugfs_create_dir(buf, debugfs);
 
 		debugfs_create_file("name", 0444, dir,
 				    (void *)nsensor->name,
