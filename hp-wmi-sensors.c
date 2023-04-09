@@ -584,16 +584,16 @@ static int hp_wmi_update_info(struct hp_wmi_sensors *state,
 		wobj = hp_wmi_get_wobj(state, instance);
 		if (!wobj) {
 			ret = -EIO;
-			goto out_free_wobj;
+			goto out_unlock;
 		}
 
 		update_numeric_sensor_from_wobj(dev, nsensor, wobj);
 
 		interpret_info(info);
 
-out_free_wobj:
 		kfree(wobj);
 
+out_unlock:
 		mutex_unlock(&state->lock);
 	}
 
