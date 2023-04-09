@@ -94,6 +94,7 @@ enum hp_wmi_type {
 
 enum hp_wmi_status {
 	HP_WMI_STATUS_OK			   = 2,
+	HP_WMI_STATUS_NO_CONTACT		   = 12,
 };
 
 enum hp_wmi_units {
@@ -297,6 +298,14 @@ static int check_wobj(const union acpi_object *wobj, u8 *possible_states_count)
 	*possible_states_count = count;
 
 	return 0;
+}
+
+static int
+numeric_sensor_is_connected(const struct hp_wmi_numeric_sensor *nsensor)
+{
+	u32 operational_status = nsensor->operational_status;
+
+	return operational_status != HP_WMI_STATUS_NO_CONTACT;
 }
 
 static int numeric_sensor_has_fault(const struct hp_wmi_numeric_sensor *nsensor)
@@ -896,7 +905,7 @@ static int hp_wmi_sensors_init(struct hp_wmi_sensors *state)
 		if (err)
 			goto out_free_wobj;
 
-		if (numeric_sensor_has_fault(nsensor))
+		if (!numeric_sensor_is_connected(nsensor))
 			goto out_free_wobj;
 
 		wtype = classify_numeric_sensor(nsensor);
