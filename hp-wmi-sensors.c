@@ -76,7 +76,6 @@
  *
  */
 
-#define HP_WMI_BIOS_GUID	   "5FB7F034-2C63-45E9-BE91-3D44E2C707E4"
 #define HP_WMI_NUMERIC_SENSOR_GUID "8F1F6435-9F42-42C8-BADC-0E9424F20C9A"
 
 /* These limits are arbitrary. The WMI implementation may vary by model. */
@@ -991,13 +990,6 @@ static int hp_wmi_sensors_probe(struct wmi_device *wdev, const void *context)
 	struct device *dev = &wdev->dev;
 	struct hp_wmi_sensors *state;
 	int err;
-
-	/* Sanity check. */
-	if (!wmi_has_guid(HP_WMI_NUMERIC_SENSOR_GUID) ||
-	    !wmi_has_guid(HP_WMI_BIOS_GUID)) {
-		err = -ENODEV;
-		goto out_err;
-	}
 
 	state = devm_kzalloc(dev, sizeof(*state), GFP_KERNEL);
 	if (!state) {
