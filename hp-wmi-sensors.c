@@ -826,10 +826,9 @@ static int hp_wmi_hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 	if (err)
 		return err;
 
-	else if ((type == hwmon_temp && attr == hwmon_temp_fault) ||
-		 (type == hwmon_fan  && attr == hwmon_fan_fault))
+	if ((type == hwmon_temp && attr == hwmon_temp_fault) ||
+	    (type == hwmon_fan  && attr == hwmon_fan_fault))
 		*val = numeric_sensor_has_fault(nsensor);
-
 	else
 		*val = info->cached_val;
 
