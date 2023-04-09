@@ -734,7 +734,7 @@ static void hp_wmi_debugfs_init(struct hp_wmi_sensors *state)
 	u8 i;
 
 	/* dev_name() gives a not-very-friendly GUID for WMI devices. */
-	scnprintf(buf, sizeof(buf), "%s-%u", "hp-wmi-sensors", dev->id);
+	scnprintf(buf, sizeof(buf), "hp-wmi-sensors-%u", dev->id);
 
 	debugfs = debugfs_create_dir(buf, NULL);
 	if (IS_ERR(debugfs))
