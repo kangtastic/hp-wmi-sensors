@@ -391,6 +391,10 @@ static int classify_numeric_sensor(const struct hp_wmi_numeric_sensor *nsensor)
 		break;
 
 	case HP_WMI_TYPE_AIR_FLOW:
+		/*
+		 * Strangely, HP considers fan RPM sensor type to be
+		 * "Air Flow" instead of the more intuitive "Tachometer".
+		 */
 		if (base_units == HP_WMI_UNITS_RPM)
 			return HP_WMI_TYPE_AIR_FLOW;
 		break;
