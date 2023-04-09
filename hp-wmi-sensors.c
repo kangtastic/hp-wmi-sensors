@@ -1000,13 +1000,10 @@ static int hp_wmi_sensors_probe(struct wmi_device *wdev, const void *context)
 {
 	struct device *dev = &wdev->dev;
 	struct hp_wmi_sensors *state;
-	int err;
 
 	state = devm_kzalloc(dev, sizeof(*state), GFP_KERNEL);
-	if (!state) {
-		err = -ENOMEM;
-		goto out_err;
-	}
+	if (!state)
+		return -ENOMEM;
 
 	state->wdev = wdev;
 
@@ -1014,10 +1011,7 @@ static int hp_wmi_sensors_probe(struct wmi_device *wdev, const void *context)
 
 	dev_set_drvdata(dev, state);
 
-	err = hp_wmi_sensors_init(state);
-
-out_err:
-	return err;
+	return hp_wmi_sensors_init(state);
 }
 
 static const struct wmi_device_id hp_wmi_sensors_id_table[] = {
