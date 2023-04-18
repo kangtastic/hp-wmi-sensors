@@ -94,7 +94,18 @@ enum hp_wmi_type {
 
 enum hp_wmi_status {
 	HP_WMI_STATUS_OK			   = 2,
+	HP_WMI_STATUS_DEGRADED			   = 3,
+	HP_WMI_STATUS_STRESSED			   = 4,
+	HP_WMI_STATUS_PREDICTIVE_FAILURE	   = 5,
+	HP_WMI_STATUS_ERROR			   = 6,
+	HP_WMI_STATUS_NON_RECOVERABLE_ERROR	   = 7,
 	HP_WMI_STATUS_NO_CONTACT		   = 12,
+	HP_WMI_STATUS_LOST_COMMUNICATION	   = 13,
+	HP_WMI_STATUS_ABORTED			   = 14,
+	HP_WMI_STATUS_SUPPORTING_ENTITY_IN_ERROR   = 16,
+
+	/* Occurs combined with one of "OK", "Degraded", and "Error" [1]. */
+	HP_WMI_STATUS_COMPLETED			   = 17,
 };
 
 enum hp_wmi_units {
@@ -309,9 +320,25 @@ numeric_sensor_is_connected(const struct hp_wmi_numeric_sensor *nsensor)
 static int numeric_sensor_has_fault(const struct hp_wmi_numeric_sensor *nsensor)
 {
 	u32 operational_status = nsensor->operational_status;
-	u32 current_reading = nsensor->current_reading;
 
-	return operational_status != HP_WMI_STATUS_OK || !current_reading;
+	switch (operational_status) {
+	case HP_WMI_STATUS_DEGRADED:
+	case HP_WMI_STATUS_STRESSED:		/* e.g. Overload, overtemp. */
+	case HP_WMI_STATUS_PREDICTIVE_FAILURE:	/* e.g. Fan removed. */
+	case HP_WMI_STATUS_ERROR:
+	case HP_WMI_STATUS_NON_RECOVERABLE_ERROR:
+	case HP_WMI_STATUS_NO_CONTACT:
+	case HP_WMI_STATUS_LOST_COMMUNICATION:
+	case HP_WMI_STATUS_ABORTED:
+	case HP_WMI_STATUS_SUPPORTING_ENTITY_IN_ERROR:
+
+	/* Assume combination by addition; bitwise OR doesn't make sense. */
+	case HP_WMI_STATUS_COMPLETED + HP_WMI_STATUS_DEGRADED:
+	case HP_WMI_STATUS_COMPLETED + HP_WMI_STATUS_ERROR:
+		return true;
+	}
+
+	return false;
 }
 
 /* scale_numeric_sensor - scale sensor reading for hwmon */
