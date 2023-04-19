@@ -217,11 +217,12 @@ struct hp_wmi_sensors {
 };
 
 /* hp_wmi_strdup - devm_kstrdup, but length-limited */
-static char *hp_wmi_strdup(struct device *dev, const char *src, u32 len)
+static char *hp_wmi_strdup(struct device *dev, const char *src)
 {
 	char *dst;
+	size_t len;
 
-	len = min(len, HP_WMI_MAX_STR_SIZE - 1);
+	len = strnlen(src, HP_WMI_MAX_STR_SIZE - 1);
 
 	dst = devm_kmalloc(dev, (len + 1) * sizeof(*dst), GFP_KERNEL);
 	if (!dst)
@@ -246,6 +247,27 @@ static union acpi_object *hp_wmi_get_wobj(struct hp_wmi_sensors *state,
 	struct wmi_device *wdev = state->wdev;
 
 	return wmidev_block_query(wdev, instance);
+}
+
+static int extract_acpi_value(struct device *dev, union acpi_object *element,
+			      acpi_object_type type, u32 *value, char **string)
+{
+	switch (type) {
+	case ACPI_TYPE_INTEGER:
+		*value = element->integer.value;
+		break;
+
+	case ACPI_TYPE_STRING:
+		*string = hp_wmi_strdup(dev, strim(element->string.pointer));
+		if (!*string)
+			return -ENOMEM;
+		break;
+
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 /*
@@ -431,13 +453,13 @@ static int classify_numeric_sensor(const struct hp_wmi_numeric_sensor *nsensor)
 static int
 populate_numeric_sensor_from_wobj(struct device *dev,
 				  struct hp_wmi_numeric_sensor *nsensor,
-				  const union acpi_object *wobj)
+				  union acpi_object *wobj)
 {
-	const union acpi_object *element;
 	const char **possible_states;
+	union acpi_object *element;
 	u8 possible_states_count;
 	acpi_object_type type;
-	const char *string;
+	char *string;
 	u32 value;
 	int prop;
 	int err;
@@ -459,21 +481,9 @@ populate_numeric_sensor_from_wobj(struct device *dev,
 	for (prop = 0; prop <= HP_WMI_PROPERTY_CURRENT_READING; prop++) {
 		type = hp_wmi_property_map[prop];
 
-		switch (type) {
-		case ACPI_TYPE_INTEGER:
-			value = element->integer.value;
-			break;
-
-		case ACPI_TYPE_STRING:
-			string = hp_wmi_strdup(dev, element->string.pointer,
-					       element->string.length);
-			if (!string)
-				return -ENOMEM;
-			break;
-
-		default:
-			return -EINVAL;
-		}
+		err = extract_acpi_value(dev, element, type, &value, &string);
+		if (err)
+			return err;
 
 		element++;
 
@@ -548,7 +558,6 @@ update_numeric_sensor_from_wobj(struct device *dev,
 	const union acpi_object *elements;
 	const union acpi_object *element;
 	const char *string;
-	u32 length;
 	u8 offset;
 
 	elements = wobj->package.elements;
@@ -557,12 +566,11 @@ update_numeric_sensor_from_wobj(struct device *dev,
 	nsensor->operational_status = element->integer.value;
 
 	element = &elements[HP_WMI_PROPERTY_CURRENT_STATE];
-	string = element->string.pointer;
+	string = strim(element->string.pointer);
 
 	if (strcmp(string, nsensor->current_state)) {
-		length = element->string.length;
 		devm_kfree(dev, nsensor->current_state);
-		nsensor->current_state = hp_wmi_strdup(dev, string, length);
+		nsensor->current_state = hp_wmi_strdup(dev, string);
 	}
 
 	/* Offset reads into the elements array after PossibleStates[0]. */
