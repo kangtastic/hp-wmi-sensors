@@ -19,70 +19,16 @@
 #include <linux/units.h>
 #include <linux/wmi.h>
 
-/*
- * MOF definition of the HP_BIOSNumericSensor WMI object [1]:
- *
- *   #pragma namespace("\\\\.\\root\\HP\\InstrumentedBIOS");
- *
- *   [abstract]
- *   class HP_BIOSSensor
- *   {
- *     [read] string Name;
- *     [read] string Description;
- *     [read, ValueMap {"0","1","2","3","4","5","6","7","8","9",
- *      "10","11","12"}, Values {"Unknown","Other","Temperature",
- *      "Voltage","Current","Tachometer","Counter","Switch","Lock",
- *      "Humidity","Smoke Detection","Presence","Air Flow"}]
- *     uint32 SensorType;
- *     [read] string OtherSensorType;
- *     [read, ValueMap {"0","1","2","3","4","5","6","7","8","9",
- *      "10","11","12","13","14","15","16","17","18","..",
- *      "0x8000.."}, Values {"Unknown","Other","OK","Degraded",
- *      "Stressed","Predictive Failure","Error",
- *      "Non-Recoverable Error","Starting","Stopping","Stopped",
- *      "In Service","No Contact","Lost Communication","Aborted",
- *      "Dormant","Supporting Entity in Error","Completed",
- *      "Power Mode","DMTF Reserved","Vendor Reserved"}]
- *     uint32 OperationalStatus;
- *     [read] string CurrentState;
- *     [read] string PossibleStates[];
- *   };
- *
- *   class HP_BIOSNumericSensor : HP_BIOSSensor
- *   {
- *      [read, ValueMap {"0","1","2","3","4","5","6","7","8","9",
- *       "10","11","12","13","14","15","16","17","18","19","20",
- *       "21","22","23","24","25","26","27","28","29","30","31",
- *       "32","33","34","35","36","37","38","39","40","41","42",
- *       "43","44","45","46","47","48","49","50","51","52","53",
- *       "54","55","56","57","58","59","60","61","62","63","64",
- *       "65"}, Values {"Unknown","Other","Degrees C","Degrees F",
- *       "Degrees K","Volts","Amps","Watts","Joules","Coulombs",
- *       "VA","Nits","Lumens","Lux","Candelas","kPa","PSI",
- *       "Newtons","CFM","RPM","Hertz","Seconds","Minutes",
- *       "Hours","Days","Weeks","Mils","Inches","Feet",
- *       "Cubic Inches","Cubic Feet","Meters","Cubic Centimeters",
- *       "Cubic Meters","Liters","Fluid Ounces","Radians",
- *       "Steradians","Revolutions","Cycles","Gravities","Ounces",
- *       "Pounds","Foot-Pounds","Ounce-Inches","Gauss","Gilberts",
- *       "Henries","Farads","Ohms","Siemens","Moles","Becquerels",
- *       "PPM (parts/million)","Decibels","DbA","DbC","Grays",
- *       "Sieverts","Color Temperature Degrees K","Bits","Bytes",
- *       "Words (data)","DoubleWords","QuadWords","Percentage"}]
- *     uint32 BaseUnits;
- *     [read] sint32 UnitModifier;
- *     [read] uint32 CurrentReading;
- *   };
- *
- */
+#define HP_WMI_NUMERIC_SENSOR_GUID	 "8F1F6435-9F42-42C8-BADC-0E9424F20C9A"
+#define HP_WMI_PLATFORM_EVENTS_GUID	 "41227C2D-80E1-423F-8B8E-87E32755A0EB"
+#define HP_WMI_PLATFORM_EVENTS_CLASS	 "HPBIOS_BIOSEvent"
+#define HP_WMI_PLATFORM_EVENTS_NAMESPACE "root\\WMI"
 
-#define HP_WMI_NUMERIC_SENSOR_GUID "8F1F6435-9F42-42C8-BADC-0E9424F20C9A"
+/* These limits are arbitrary. The WMI implementation may vary by system. */
 
-/* These limits are arbitrary. The WMI implementation may vary by model. */
-
-#define HP_WMI_MAX_STR_SIZE	   128U
-#define HP_WMI_MAX_PROPERTIES	   32U
-#define HP_WMI_MAX_INSTANCES	   32U
+#define HP_WMI_MAX_STR_SIZE		 128U
+#define HP_WMI_MAX_PROPERTIES		 32U
+#define HP_WMI_MAX_INSTANCES		 32U
 
 enum hp_wmi_type {
 	HP_WMI_TYPE_OTHER			   = 1,
@@ -90,6 +36,16 @@ enum hp_wmi_type {
 	HP_WMI_TYPE_VOLTAGE			   = 3,
 	HP_WMI_TYPE_CURRENT			   = 4,
 	HP_WMI_TYPE_AIR_FLOW			   = 12,
+};
+
+enum hp_wmi_severity {
+	HP_WMI_SEVERITY_UNKNOWN			   = 0,
+	HP_WMI_SEVERITY_OK			   = 5,
+	HP_WMI_SEVERITY_DEGRADED_WARNING	   = 10,
+	HP_WMI_SEVERITY_MINOR_FAILURE		   = 15,
+	HP_WMI_SEVERITY_MAJOR_FAILURE		   = 20,
+	HP_WMI_SEVERITY_CRITICAL_FAILURE	   = 25,
+	HP_WMI_SEVERITY_NON_RECOVERABLE_ERROR	   = 30,
 };
 
 enum hp_wmi_status {
@@ -143,6 +99,26 @@ static const acpi_object_type hp_wmi_property_map[] = {
 	[HP_WMI_PROPERTY_CURRENT_READING]	   = ACPI_TYPE_INTEGER,
 };
 
+enum hp_wmi_platform_events_property {
+	HP_WMI_PLATFORM_EVENTS_PROPERTY_NAME		    = 0,
+	HP_WMI_PLATFORM_EVENTS_PROPERTY_DESCRIPTION	    = 1,
+	HP_WMI_PLATFORM_EVENTS_PROPERTY_SOURCE_NAMESPACE    = 2,
+	HP_WMI_PLATFORM_EVENTS_PROPERTY_SOURCE_CLASS	    = 3,
+	HP_WMI_PLATFORM_EVENTS_PROPERTY_CATEGORY	    = 4,
+	HP_WMI_PLATFORM_EVENTS_PROPERTY_POSSIBLE_SEVERITY   = 5,
+	HP_WMI_PLATFORM_EVENTS_PROPERTY_POSSIBLE_STATUS	    = 6,
+};
+
+static const acpi_object_type hp_wmi_platform_events_property_map[] = {
+	[HP_WMI_PLATFORM_EVENTS_PROPERTY_NAME]		    = ACPI_TYPE_STRING,
+	[HP_WMI_PLATFORM_EVENTS_PROPERTY_DESCRIPTION]	    = ACPI_TYPE_STRING,
+	[HP_WMI_PLATFORM_EVENTS_PROPERTY_SOURCE_NAMESPACE]  = ACPI_TYPE_STRING,
+	[HP_WMI_PLATFORM_EVENTS_PROPERTY_SOURCE_CLASS]	    = ACPI_TYPE_STRING,
+	[HP_WMI_PLATFORM_EVENTS_PROPERTY_CATEGORY]	    = ACPI_TYPE_INTEGER,
+	[HP_WMI_PLATFORM_EVENTS_PROPERTY_POSSIBLE_SEVERITY] = ACPI_TYPE_INTEGER,
+	[HP_WMI_PLATFORM_EVENTS_PROPERTY_POSSIBLE_STATUS]   = ACPI_TYPE_INTEGER,
+};
+
 static const enum hwmon_sensor_types hp_wmi_hwmon_type_map[] = {
 	[HP_WMI_TYPE_TEMPERATURE]		   = hwmon_temp,
 	[HP_WMI_TYPE_VOLTAGE]			   = hwmon_in,
@@ -159,9 +135,65 @@ static const u32 hp_wmi_hwmon_attributes[hwmon_max] = {
 };
 
 /*
- * struct hp_wmi_numeric_sensor - a HP_BIOSNumericSensor instance
+ * struct hp_wmi_numeric_sensor - a HPBIOS_BIOSNumericSensor instance
  *
- * Contains WMI object instance properties. See MOF definition [1].
+ * MOF definition [1]:
+ *
+ *   #pragma namespace("\\\\.\\root\\HP\\InstrumentedBIOS");
+ *
+ *   [abstract]
+ *   class HP_BIOSSensor
+ *   {
+ *     [read] string Name;
+ *     [read] string Description;
+ *     [read, ValueMap {"0","1","2","3","4","5","6","7","8","9",
+ *      "10","11","12"}, Values {"Unknown","Other","Temperature",
+ *      "Voltage","Current","Tachometer","Counter","Switch","Lock",
+ *      "Humidity","Smoke Detection","Presence","Air Flow"}]
+ *     uint32 SensorType;
+ *     [read] string OtherSensorType;
+ *     [read, ValueMap {"0","1","2","3","4","5","6","7","8","9",
+ *      "10","11","12","13","14","15","16","17","18","..",
+ *      "0x8000.."}, Values {"Unknown","Other","OK","Degraded",
+ *      "Stressed","Predictive Failure","Error",
+ *      "Non-Recoverable Error","Starting","Stopping","Stopped",
+ *      "In Service","No Contact","Lost Communication","Aborted",
+ *      "Dormant","Supporting Entity in Error","Completed",
+ *      "Power Mode","DMTF Reserved","Vendor Reserved"}]
+ *     uint32 OperationalStatus;
+ *     [read] string CurrentState;
+ *     [read] string PossibleStates[];
+ *   };
+ *
+ *   class HP_BIOSNumericSensor : HP_BIOSSensor
+ *   {
+ *     [read, ValueMap {"0","1","2","3","4","5","6","7","8","9",
+ *      "10","11","12","13","14","15","16","17","18","19","20",
+ *      "21","22","23","24","25","26","27","28","29","30","31",
+ *      "32","33","34","35","36","37","38","39","40","41","42",
+ *      "43","44","45","46","47","48","49","50","51","52","53",
+ *      "54","55","56","57","58","59","60","61","62","63","64",
+ *      "65"}, Values {"Unknown","Other","Degrees C","Degrees F",
+ *      "Degrees K","Volts","Amps","Watts","Joules","Coulombs",
+ *      "VA","Nits","Lumens","Lux","Candelas","kPa","PSI",
+ *      "Newtons","CFM","RPM","Hertz","Seconds","Minutes",
+ *      "Hours","Days","Weeks","Mils","Inches","Feet",
+ *      "Cubic Inches","Cubic Feet","Meters","Cubic Centimeters",
+ *      "Cubic Meters","Liters","Fluid Ounces","Radians",
+ *      "Steradians","Revolutions","Cycles","Gravities","Ounces",
+ *      "Pounds","Foot-Pounds","Ounce-Inches","Gauss","Gilberts",
+ *      "Henries","Farads","Ohms","Siemens","Moles","Becquerels",
+ *      "PPM (parts/million)","Decibels","DbA","DbC","Grays",
+ *      "Sieverts","Color Temperature Degrees K","Bits","Bytes",
+ *      "Words (data)","DoubleWords","QuadWords","Percentage"}]
+ *     uint32 BaseUnits;
+ *     [read] sint32 UnitModifier;
+ *     [read] uint32 CurrentReading;
+ *   };
+ *
+ *   class HPBIOS_BIOSNumericSensor : HP_BIOSNumericSensor
+ *   {
+ *   };
  */
 struct hp_wmi_numeric_sensor {
 	const char *name;
@@ -176,6 +208,57 @@ struct hp_wmi_numeric_sensor {
 	u32 current_reading;
 
 	u8 possible_states_count;
+};
+
+/*
+ * struct hp_wmi_platform_events - a HPBIOS_PlatformEvents instance
+ *
+ * Instances of this object reveal the set of possible HPBIOS_BIOSEvent
+ * instances for the current system, but it may not always be present.
+ *
+ * MOF definition:
+ *
+ *   #pragma namespace("\\\\.\\root\\HP\\InstrumentedBIOS");
+ *
+ *   [abstract]
+ *   class HP_PlatformEvents
+ *   {
+ *     [read] string Name;
+ *     [read] string Description;
+ *     [read] string SourceNamespace;
+ *     [read] string SourceClass;
+ *     [read, ValueMap {"0","1","2","3","4",".."}, Values {
+ *      "Unknown","Configuration Change","Button Pressed",
+ *      "Sensor","BIOS Settings","Reserved"}]
+ *     uint32 Category;
+ *     [read, ValueMap{"0","5","10","15","20","25","30",".."},
+ *      Values{"Unknown","OK","Degraded/Warning","Minor Failure",
+ *      "Major Failure","Critical Failure","Non-recoverable Error",
+ *      "DMTF Reserved"}]
+ *     uint32 PossibleSeverity;
+ *     [read, ValueMap {"0","1","2","3","4","5","6","7","8","9",
+ *      "10","11","12","13","14","15","16","17","18","..",
+ *      "0x8000.."}, Values {"Unknown","Other","OK","Degraded",
+ *      "Stressed","Predictive Failure","Error",
+ *      "Non-Recoverable Error","Starting","Stopping","Stopped",
+ *      "In Service","No Contact","Lost Communication","Aborted",
+ *      "Dormant","Supporting Entity in Error","Completed",
+ *      "Power Mode","DMTF Reserved","Vendor Reserved"}]
+ *     uint32 PossibleStatus;
+ *   };
+ *
+ *   class HPBIOS_PlatformEvents : HP_PlatformEvents
+ *   {
+ *   };
+ */
+struct hp_wmi_platform_events {
+	const char *name;
+	const char *description;
+	const char *source_namespace;
+	const char *source_class;
+	u32 category;
+	u32 possible_severity;
+	u32 possible_status;
 };
 
 /*
@@ -200,18 +283,22 @@ struct hp_wmi_info {
 /*
  * struct hp_wmi_sensors - driver state
  * @wdev: pointer to the parent WMI device
+ * @pevents: platform events structs for all platform events visible in WMI
  * @info: sensor info structs for all sensors visible in WMI
  * @info_map: access info structs by hwmon type and channel number
  * @count: count of all sensors visible in WMI
  * @channel_count: count of hwmon channels by hwmon type
+ * @pevents_count: count of all platform events visible in WMI
  * @lock: mutex to lock polling WMI and changes to driver state
  */
 struct hp_wmi_sensors {
 	struct wmi_device *wdev;
 	struct hp_wmi_info info[HP_WMI_MAX_INSTANCES];
 	struct hp_wmi_info **info_map[hwmon_max];
+	struct hp_wmi_platform_events pevents[HP_WMI_MAX_INSTANCES];
 	u8 count;
 	u8 channel_count[hwmon_max];
+	u8 pevents_count;
 
 	struct mutex lock; /* lock polling WMI, driver state changes */
 };
@@ -234,19 +321,50 @@ static char *hp_wmi_strdup(struct device *dev, const char *src)
 }
 
 /*
- * hp_wmi_get_wobj - poll WMI for a HP_BIOSNumericSensor object instance
- * @state: pointer to driver state
+ * hp_wmi_get_wobj - poll WMI for a WMI object instance
+ * @guid: WMI object GUID
  * @instance: WMI object instance number
  *
  * Returns a new WMI object instance on success, or NULL on error.
  * Caller must kfree the result.
  */
-static union acpi_object *hp_wmi_get_wobj(struct hp_wmi_sensors *state,
-					  u8 instance)
+static union acpi_object *hp_wmi_get_wobj(const char *guid, u8 instance)
 {
-	struct wmi_device *wdev = state->wdev;
+	struct acpi_buffer out = { ACPI_ALLOCATE_BUFFER, NULL };
+	acpi_status err;
 
-	return wmidev_block_query(wdev, instance);
+	err = wmi_query_block(guid, instance, &out);
+	if (ACPI_FAILURE(err))
+		return NULL;
+
+	return out.pointer;
+}
+
+static int check_wobj(const union acpi_object *wobj,
+		      const acpi_object_type property_map[], int last_prop)
+{
+	acpi_object_type type = wobj->type;
+	acpi_object_type valid_type;
+	union acpi_object *elements;
+	u32 elem_count;
+	int prop;
+
+	if (type != ACPI_TYPE_PACKAGE)
+		return -EINVAL;
+
+	elem_count = wobj->package.count;
+	if (elem_count != last_prop + 1)
+		return -EINVAL;
+
+	elements = wobj->package.elements;
+	for (prop = 0; prop <= last_prop; prop++) {
+		type = elements[prop].type;
+		valid_type = property_map[prop];
+		if (type != valid_type)
+			return -EINVAL;
+	}
+
+	return 0;
 }
 
 static int extract_acpi_value(struct device *dev, union acpi_object *element,
@@ -271,13 +389,14 @@ static int extract_acpi_value(struct device *dev, union acpi_object *element,
 }
 
 /*
- * check_wobj - validate a HP_BIOSNumericSensor WMI object instance
+ * check_numeric_sensor_wobj - validate a HPBIOS_BIOSNumericSensor instance
  * @wobj: pointer to WMI object instance to check
  * @possible_states_count: out pointer to count of possible states
  *
  * Returns 0 on success, or a negative error code on error.
  */
-static int check_wobj(const union acpi_object *wobj, u8 *possible_states_count)
+static int check_numeric_sensor_wobj(const union acpi_object *wobj,
+				     u8 *possible_states_count)
 {
 	acpi_object_type type = wobj->type;
 	int prop = HP_WMI_PROPERTY_NAME;
@@ -464,7 +583,7 @@ populate_numeric_sensor_from_wobj(struct device *dev,
 	int prop;
 	int err;
 
-	err = check_wobj(wobj, &possible_states_count);
+	err = check_numeric_sensor_wobj(wobj, &possible_states_count);
 	if (err)
 		return err;
 
@@ -584,6 +703,90 @@ update_numeric_sensor_from_wobj(struct device *dev,
 }
 
 /*
+ * check_platform_events_wobj - validate a HPBIOS_PlatformEvents instance
+ * @wobj: pointer to WMI object instance to check
+ *
+ * Returns 0 on success, or a negative error code on error.
+ */
+static int check_platform_events_wobj(const union acpi_object *wobj)
+{
+	return check_wobj(wobj, hp_wmi_platform_events_property_map,
+			  HP_WMI_PLATFORM_EVENTS_PROPERTY_POSSIBLE_STATUS);
+}
+
+static int
+populate_platform_events_from_wobj(struct device *dev,
+				   struct hp_wmi_platform_events *pevents,
+				   union acpi_object *wobj)
+{
+	int last_prop = HP_WMI_PLATFORM_EVENTS_PROPERTY_POSSIBLE_STATUS;
+	int prop = HP_WMI_PLATFORM_EVENTS_PROPERTY_NAME;
+	union acpi_object *element;
+	acpi_object_type type;
+	char *string;
+	u32 value;
+	int err;
+
+	err = check_platform_events_wobj(wobj);
+	if (err)
+		return err;
+
+	element = wobj->package.elements;
+
+	for (; prop <= last_prop; prop++, element++) {
+		type = hp_wmi_platform_events_property_map[prop];
+
+		err = extract_acpi_value(dev, element, type, &value, &string);
+		if (err)
+			return err;
+
+		switch (prop) {
+		case HP_WMI_PLATFORM_EVENTS_PROPERTY_NAME:
+			pevents->name = string;
+			break;
+
+		case HP_WMI_PLATFORM_EVENTS_PROPERTY_DESCRIPTION:
+			pevents->description = string;
+			break;
+
+		case HP_WMI_PLATFORM_EVENTS_PROPERTY_SOURCE_NAMESPACE:
+			err = strcasecmp(HP_WMI_PLATFORM_EVENTS_NAMESPACE,
+					 string);
+			if (err)
+				return -EINVAL;
+
+			pevents->source_namespace = string;
+			break;
+
+		case HP_WMI_PLATFORM_EVENTS_PROPERTY_SOURCE_CLASS:
+			if (strcmp(HP_WMI_PLATFORM_EVENTS_CLASS, string))
+				return -EINVAL;
+
+			pevents->source_class = string;
+			break;
+
+		case HP_WMI_PLATFORM_EVENTS_PROPERTY_CATEGORY:
+			pevents->category = value;
+			break;
+
+		case HP_WMI_PLATFORM_EVENTS_PROPERTY_POSSIBLE_SEVERITY:
+			pevents->possible_severity = value;
+			break;
+
+		case HP_WMI_PLATFORM_EVENTS_PROPERTY_POSSIBLE_STATUS:
+			pevents->possible_status = value;
+			break;
+
+		default:
+			return -EINVAL;
+		}
+
+	}
+
+	return 0;
+}
+
+/*
  * interpret_info - interpret sensor for hwmon
  * @info: pointer to sensor info struct
  *
@@ -616,7 +819,7 @@ static int hp_wmi_update_info(struct hp_wmi_sensors *state,
 	if (time_after(jiffies, info->last_updated + HZ)) {
 		mutex_lock(&state->lock);
 
-		wobj = hp_wmi_get_wobj(state, instance);
+		wobj = hp_wmi_get_wobj(HP_WMI_NUMERIC_SENSOR_GUID, instance);
 		if (!wobj) {
 			ret = -EIO;
 			goto out_unlock;
@@ -759,11 +962,13 @@ static void hp_wmi_devm_debugfs_remove(void *res)
 /* hp_wmi_debugfs_init - create and populate debugfs directory tree */
 static void hp_wmi_debugfs_init(struct hp_wmi_sensors *state)
 {
+	struct hp_wmi_platform_events *pevents = state->pevents;
 	struct device *dev = &state->wdev->dev;
 	struct hp_wmi_info *info = state->info;
 	struct hp_wmi_numeric_sensor *nsensor;
 	char buf[HP_WMI_MAX_STR_SIZE];
 	struct dentry *debugfs;
+	struct dentry *entries;
 	struct dentry *dir;
 	int err;
 	u8 i;
@@ -781,11 +986,13 @@ static void hp_wmi_debugfs_init(struct hp_wmi_sensors *state)
 		return;
 	}
 
+	entries = debugfs_create_dir("sensors", debugfs);
+
 	for (i = 0; i < state->count; i++, info++) {
 		nsensor = &info->nsensor;
 
 		scnprintf(buf, sizeof(buf), "%u", i);
-		dir = debugfs_create_dir(buf, debugfs);
+		dir = debugfs_create_dir(buf, entries);
 
 		debugfs_create_file("name", 0444, dir,
 				    (void *)nsensor->name,
@@ -823,6 +1030,38 @@ static void hp_wmi_debugfs_init(struct hp_wmi_sensors *state)
 		debugfs_create_file("current_reading", 0444, dir,
 				    &nsensor->current_reading,
 				    &current_reading_fops);
+	}
+
+	entries = debugfs_create_dir("platform_events", debugfs);
+
+	for (i = 0; i < state->pevents_count; i++, pevents++) {
+		scnprintf(buf, sizeof(buf), "%u", i);
+		dir = debugfs_create_dir(buf, entries);
+
+		debugfs_create_file("name", 0444, dir,
+				    (void *)pevents->name,
+				    &basic_string_fops);
+
+		debugfs_create_file("description", 0444, dir,
+				    (void *)pevents->description,
+				    &basic_string_fops);
+
+		debugfs_create_file("source_namespace", 0444, dir,
+				    (void *)pevents->source_namespace,
+				    &basic_string_fops);
+
+		debugfs_create_file("source_class", 0444, dir,
+				    (void *)pevents->source_class,
+				    &basic_string_fops);
+
+		debugfs_create_u32("category", 0444, dir,
+				   &pevents->category);
+
+		debugfs_create_u32("possible_severity", 0444, dir,
+				   &pevents->possible_severity);
+
+		debugfs_create_u32("possible_status", 0444, dir,
+				   &pevents->possible_status);
 	}
 }
 
@@ -912,6 +1151,32 @@ static struct hwmon_chip_info hp_wmi_chip_info = {
 	.info        = NULL,
 };
 
+static void init_platform_events(struct hp_wmi_sensors *state)
+{
+	struct hp_wmi_platform_events *pevents = state->pevents;
+	struct device *dev = &state->wdev->dev;
+	union acpi_object *wobj;
+	int err;
+	u8 i;
+
+	for (i = 0; i < HP_WMI_MAX_INSTANCES; i++, pevents++) {
+		wobj = hp_wmi_get_wobj(HP_WMI_PLATFORM_EVENTS_GUID, i);
+		if (!wobj)
+			break;
+
+		err = populate_platform_events_from_wobj(dev, pevents, wobj);
+
+		kfree(wobj);
+
+		if (err)
+			break;
+	}
+
+	state->pevents_count = i;
+
+	dev_dbg(dev, "Found %u platform events\n", i);
+}
+
 static int hp_wmi_sensors_init(struct hp_wmi_sensors *state)
 {
 	struct hp_wmi_info *active_info[HP_WMI_MAX_INSTANCES];
@@ -930,8 +1195,10 @@ static int hp_wmi_sensors_init(struct hp_wmi_sensors *state)
 	int err;
 	u8 i;
 
+	enumerate_platform_events(state);
+
 	for (i = 0, channel = 0; i < HP_WMI_MAX_INSTANCES; i++, info++) {
-		wobj = hp_wmi_get_wobj(state, i);
+		wobj = hp_wmi_get_wobj(HP_WMI_NUMERIC_SENSOR_GUID, i);
 		if (!wobj)
 			break;
 
