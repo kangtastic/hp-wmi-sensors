@@ -19,6 +19,7 @@
 #include <linux/units.h>
 #include <linux/wmi.h>
 
+#define HP_WMI_EVENT_GUID		 "95F24279-4D7B-4334-9387-ACCDC67EF61C"
 #define HP_WMI_NUMERIC_SENSOR_GUID	 "8F1F6435-9F42-42C8-BADC-0E9424F20C9A"
 #define HP_WMI_PLATFORM_EVENTS_GUID	 "41227C2D-80E1-423F-8B8E-87E32755A0EB"
 #define HP_WMI_PLATFORM_EVENTS_CLASS	 "HPBIOS_BIOSEvent"
@@ -117,6 +118,22 @@ static const acpi_object_type hp_wmi_platform_events_property_map[] = {
 	[HP_WMI_PLATFORM_EVENTS_PROPERTY_CATEGORY]	    = ACPI_TYPE_INTEGER,
 	[HP_WMI_PLATFORM_EVENTS_PROPERTY_POSSIBLE_SEVERITY] = ACPI_TYPE_INTEGER,
 	[HP_WMI_PLATFORM_EVENTS_PROPERTY_POSSIBLE_STATUS]   = ACPI_TYPE_INTEGER,
+};
+
+enum hp_wmi_event_property {
+	HP_WMI_EVENT_PROPERTY_NAME		   = 0,
+	HP_WMI_EVENT_PROPERTY_DESCRIPTION	   = 1,
+	HP_WMI_EVENT_PROPERTY_CATEGORY		   = 2,
+	HP_WMI_EVENT_PROPERTY_SEVERITY		   = 3,
+	HP_WMI_EVENT_PROPERTY_STATUS		   = 4,
+};
+
+static const acpi_object_type hp_wmi_event_property_map[] = {
+	[HP_WMI_EVENT_PROPERTY_NAME]		   = ACPI_TYPE_STRING,
+	[HP_WMI_EVENT_PROPERTY_DESCRIPTION]	   = ACPI_TYPE_STRING,
+	[HP_WMI_EVENT_PROPERTY_CATEGORY]	   = ACPI_TYPE_INTEGER,
+	[HP_WMI_EVENT_PROPERTY_SEVERITY]	   = ACPI_TYPE_INTEGER,
+	[HP_WMI_EVENT_PROPERTY_STATUS]		   = ACPI_TYPE_INTEGER,
 };
 
 static const enum hwmon_sensor_types hp_wmi_hwmon_type_map[] = {
@@ -259,6 +276,47 @@ struct hp_wmi_platform_events {
 	u32 category;
 	u32 possible_severity;
 	u32 possible_status;
+};
+
+/*
+ * struct hp_wmi_event - a HPBIOS_BIOSEvent instance
+ *
+ * MOF definition [1] (corrected below from original):
+ *
+ *   #pragma namespace("\\\\.\\root\\WMI");
+ *
+ *   class HP_BIOSEvent : WMIEvent
+ *   {
+ *     [read] string Name;
+ *     [read] string Description;
+ *     [read ValueMap {"0","1","2","3","4"}, Values {"Unknown",
+ *      "Configuration Change","Button Pressed","Sensor",
+ *      "BIOS Settings"}]
+ *     uint32 Category;
+ *     [read, ValueMap {"0","5","10","15","20","25","30"},
+ *      Values {"Unknown","OK","Degraded/Warning",
+ *      "Minor Failure","Major Failure","Critical Failure",
+ *      "Non-recoverable Error"}]
+ *     uint32 Severity;
+ *     [read, ValueMap {"0","1","2","3","4","5","6","7","8",
+ *      "9","10","11","12","13","14","15","16","17","18","..",
+ *      "0x8000.."}, Values {"Unknown","Other","OK","Degraded",
+ *      "Stressed","Predictive Failure","Error",
+ *      "Non-Recoverable Error","Starting","Stopping","Stopped",
+ *      "In Service","No Contact","Lost Communication","Aborted",
+ *      "Dormant","Supporting Entity in Error","Completed",
+ *      "Power Mode","DMTF Reserved","Vendor Reserved"}]
+ *     uint32 Status;
+ *   };
+ *
+ *   class HPBIOS_BIOSEvent : HP_BIOSEvent
+ *   {
+ *   };
+ */
+struct hp_wmi_event {
+	const char *name;
+	const char *description;
+	u32 category;
 };
 
 /*
@@ -750,16 +808,15 @@ populate_platform_events_from_wobj(struct device *dev,
 			break;
 
 		case HP_WMI_PLATFORM_EVENTS_PROPERTY_SOURCE_NAMESPACE:
-			err = strcasecmp(HP_WMI_PLATFORM_EVENTS_NAMESPACE,
-					 string);
-			if (err)
+			if (strcasecmp(HP_WMI_PLATFORM_EVENTS_NAMESPACE,
+				       string))
 				return -EINVAL;
 
 			pevents->source_namespace = string;
 			break;
 
 		case HP_WMI_PLATFORM_EVENTS_PROPERTY_SOURCE_CLASS:
-			if (strcmp(HP_WMI_PLATFORM_EVENTS_CLASS, string))
+			if (strcasecmp(HP_WMI_PLATFORM_EVENTS_CLASS, string))
 				return -EINVAL;
 
 			pevents->source_class = string;
@@ -780,7 +837,55 @@ populate_platform_events_from_wobj(struct device *dev,
 		default:
 			return -EINVAL;
 		}
+	}
 
+	return 0;
+}
+
+/*
+ * check_event_wobj - validate a HPBIOS_BIOSEvent instance
+ * @wobj: pointer to WMI object instance to check
+ *
+ * Returns 0 on success, or a negative error code on error.
+ */
+static int check_event_wobj(const union acpi_object *wobj)
+{
+	return check_wobj(wobj, hp_wmi_event_property_map,
+			  HP_WMI_EVENT_PROPERTY_STATUS);
+}
+
+static int populate_event_from_wobj(struct hp_wmi_event *event,
+				    union acpi_object *wobj)
+{
+	int prop = HP_WMI_EVENT_PROPERTY_NAME;
+	union acpi_object *element;
+	int err;
+
+	err = check_event_wobj(wobj);
+	if (err)
+		return err;
+
+	element = wobj->package.elements;
+
+	/* Extracted strings are NOT device-managed copies. */
+
+	for (; prop <= HP_WMI_EVENT_PROPERTY_CATEGORY; prop++, element++) {
+		switch (prop) {
+		case HP_WMI_EVENT_PROPERTY_NAME:
+			event->name = strim(element->string.pointer);
+			break;
+
+		case HP_WMI_EVENT_PROPERTY_DESCRIPTION:
+			event->description = strim(element->string.pointer);
+			break;
+
+		case HP_WMI_EVENT_PROPERTY_CATEGORY:
+			event->category = element->integer.value;
+			break;
+
+		default:
+			return -EINVAL;
+		}
 	}
 
 	return 0;
