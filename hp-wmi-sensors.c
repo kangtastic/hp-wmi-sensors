@@ -678,13 +678,6 @@ populate_numeric_sensor_from_wobj(struct device *dev,
 				return -EINVAL;
 
 			nsensor->sensor_type = value;
-
-			/* Skip OtherSensorType if it will be meaningless. */
-			if (value != HP_WMI_TYPE_OTHER) {
-				element++;
-				prop++;
-			}
-
 			break;
 
 		case HP_WMI_PROPERTY_OTHER_SENSOR_TYPE:
