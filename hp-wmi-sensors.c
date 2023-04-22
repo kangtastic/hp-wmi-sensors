@@ -66,6 +66,7 @@ enum hp_wmi_status {
 };
 
 enum hp_wmi_units {
+	HP_WMI_UNITS_OTHER			   = 1,
 	HP_WMI_UNITS_DEGREES_C			   = 2,
 	HP_WMI_UNITS_DEGREES_F			   = 3,
 	HP_WMI_UNITS_DEGREES_K			   = 4,
@@ -595,10 +596,22 @@ static int classify_numeric_sensor(const struct hp_wmi_numeric_sensor *nsensor)
 {
 	u32 sensor_type = nsensor->sensor_type;
 	u32 base_units = nsensor->base_units;
+	const char *name = nsensor->name;
 
 	switch (sensor_type) {
 	case HP_WMI_TYPE_TEMPERATURE:
-		if (base_units == HP_WMI_UNITS_DEGREES_C ||
+		/*
+		 * Some systems have sensors named "X Thermal Index" in "Other"
+		 * units. Tested CPU sensor examples were found to be in °C,
+		 * albeit perhaps "differently" accurate; e.g. readings were
+		 * reliably -6°C vs. coretemp on a HP Compaq Elite 8300, and
+		 * +8°C on an EliteOne G1 800. But this is still within the
+		 * realm of plausibility for cheaply implemented motherboard
+		 * sensors, and chassis readings were about as expected.
+		 */
+		if ((base_units == HP_WMI_UNITS_OTHER &&
+		     strstr(name, HP_WMI_PATTERN_TEMP_SENSOR)) ||
+		    base_units == HP_WMI_UNITS_DEGREES_C ||
 		    base_units == HP_WMI_UNITS_DEGREES_F ||
 		    base_units == HP_WMI_UNITS_DEGREES_K)
 			return HP_WMI_TYPE_TEMPERATURE;
