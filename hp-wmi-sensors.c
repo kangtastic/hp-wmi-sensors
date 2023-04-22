@@ -9,6 +9,12 @@
  * [1] Hewlett-Packard Development Company, L.P.,
  *     "HP Client Management Interface Technical White Paper", 2005. [Online].
  *     Available: https://h20331.www2.hp.com/hpsub/downloads/cmi_whitepaper.pdf
+ * [2] Hewlett-Packard Development Company, L.P.,
+ *     "HP Retail Manageability", 2012. [Online].
+ *     Available: http://h10032.www1.hp.com/ctg/Manual/c03291135.pdf
+ * [3] Linux Hardware Project, A. Ponomarenko et al.,
+ *     "linuxhw/ACPI - Collect ACPI table dumps", 2018. [Online].
+ *     Available: https://github.com/linuxhw/ACPI/
  */
 
 #include <linux/acpi.h>
@@ -25,6 +31,19 @@
 #define HP_WMI_PLATFORM_EVENTS_CLASS	 "HPBIOS_BIOSEvent"
 #define HP_WMI_PLATFORM_EVENTS_NAMESPACE "root\\WMI"
 
+/* Patterns for recognizing sensors and matching events to channels. */
+
+#define HP_WMI_PATTERN_SYS_TEMP2	 "System Ambient Temperature"
+#define HP_WMI_PATTERN_SYS_TEMP		 "Chassis Thermal Index"
+#define HP_WMI_PATTERN_CPU_TEMP		 "CPU Thermal Index"
+#define HP_WMI_PATTERN_CPU_TEMP2	 "CPU Temperature"
+#define HP_WMI_PATTERN_TEMP_SENSOR	 "Thermal Index"
+#define HP_WMI_PATTERN_TEMP_ALARM	 "Thermal Critical"
+#define HP_WMI_PATTERN_INTRUSION_ALARM	 "Hood Intrusion"
+#define HP_WMI_PATTERN_FAN_ALARM	 "Stall"
+#define HP_WMI_PATTERN_TEMP		 "Temperature"
+#define HP_WMI_PATTERN_CPU		 "CPU"
+
 /* These limits are arbitrary. The WMI implementation may vary by system. */
 
 #define HP_WMI_MAX_STR_SIZE		 128U
@@ -37,6 +56,11 @@ enum hp_wmi_type {
 	HP_WMI_TYPE_VOLTAGE			   = 3,
 	HP_WMI_TYPE_CURRENT			   = 4,
 	HP_WMI_TYPE_AIR_FLOW			   = 12,
+	HP_WMI_TYPE_INTRUSION			   = 0xabadb01, /* Custom. */
+};
+
+enum hp_wmi_category {
+	HP_WMI_CATEGORY_SENSOR			   = 3,
 };
 
 enum hp_wmi_severity {
@@ -145,11 +169,12 @@ static const enum hwmon_sensor_types hp_wmi_hwmon_type_map[] = {
 };
 
 static const u32 hp_wmi_hwmon_attributes[hwmon_max] = {
-	[hwmon_chip] = HWMON_C_REGISTER_TZ,
-	[hwmon_temp] = HWMON_T_INPUT | HWMON_T_LABEL | HWMON_T_FAULT,
-	[hwmon_in]   = HWMON_I_INPUT | HWMON_I_LABEL,
-	[hwmon_curr] = HWMON_C_INPUT | HWMON_C_LABEL,
-	[hwmon_fan]  = HWMON_F_INPUT | HWMON_F_LABEL | HWMON_F_FAULT,
+	[hwmon_chip]	  = HWMON_C_REGISTER_TZ,
+	[hwmon_temp]	  = HWMON_T_INPUT | HWMON_T_LABEL | HWMON_T_FAULT,
+	[hwmon_in]	  = HWMON_I_INPUT | HWMON_I_LABEL,
+	[hwmon_curr]	  = HWMON_C_INPUT | HWMON_C_LABEL,
+	[hwmon_fan]	  = HWMON_F_INPUT | HWMON_F_LABEL | HWMON_F_FAULT,
+	[hwmon_intrusion] = HWMON_INTRUSION_ALARM,
 };
 
 /*
@@ -325,6 +350,8 @@ struct hp_wmi_event {
  * @nsensor: numeric sensor properties
  * @instance: its WMI instance number
  * @is_active: whether the following fields are valid
+ * @has_alarm: whether sensor has an alarm flag
+ * @alarm: alarm flag
  * @type: its hwmon sensor type
  * @cached_val: current sensor reading value, scaled for hwmon
  * @last_updated: when these readings were last updated
@@ -334,9 +361,12 @@ struct hp_wmi_info {
 	u8 instance;
 
 	bool is_active;
+	bool has_alarm;
+	bool alarm;
 	enum hwmon_sensor_types type;
 	long cached_val;
 	unsigned long last_updated; /* in jiffies */
+
 };
 
 /*
@@ -348,6 +378,8 @@ struct hp_wmi_info {
  * @count: count of all sensors visible in WMI
  * @channel_count: count of hwmon channels by hwmon type
  * @pevents_count: count of all platform events visible in WMI
+ * @has_intrusion: whether an intrusion sensor is present
+ * @intrusion: intrusion flag
  * @lock: mutex to lock polling WMI and changes to driver state
  */
 struct hp_wmi_sensors {
@@ -358,6 +390,8 @@ struct hp_wmi_sensors {
 	u8 count;
 	u8 channel_count[hwmon_max];
 	u8 pevents_count;
+	bool has_intrusion;
+	bool intrusion;
 
 	struct mutex lock; /* lock polling WMI, driver state changes */
 };
@@ -898,6 +932,45 @@ static int populate_event_from_wobj(struct hp_wmi_event *event,
 }
 
 /*
+ * classify_event - classify an event
+ * @name: event name
+ * @category: event category
+ *
+ * Classify instances of both HPBIOS_PlatformEvents and HPBIOS_BIOSEvent from
+ * property values. Recognition criteria are based on multiple ACPI dumps [3].
+ *
+ * Returns an enum hp_wmi_type value on success,
+ * or a negative value if the event type is unsupported.
+ */
+static int classify_event(const char *event_name, u32 category)
+{
+	if (category != HP_WMI_CATEGORY_SENSOR)
+		return -EINVAL;
+
+	/* Fan events have Name "X Stall". */
+	if (strstr(event_name, HP_WMI_PATTERN_FAN_ALARM))
+		return HP_WMI_TYPE_AIR_FLOW;
+
+	/* Intrusion events have Name "Hood Intrusion". */
+	if (!strcmp(event_name, HP_WMI_PATTERN_INTRUSION_ALARM))
+		return HP_WMI_TYPE_INTRUSION;
+
+	/*
+	 * Temperature events have Name either "Thermal Caution" or
+	 * "Thermal Critical". Deal only with "Thermal Critical" events.
+	 *
+	 * "Thermal Caution" events have Status "Stressed", informing us that
+	 * the OperationalStatus of the related sensor has become "Stressed".
+	 * However, this is already a fault condition that will clear itself
+	 * when the sensor recovers, so we have no further interest in them.
+	 */
+	if (!strcmp(event_name, HP_WMI_PATTERN_TEMP_ALARM))
+		return HP_WMI_TYPE_TEMPERATURE;
+
+	return -EINVAL;
+}
+
+/*
  * interpret_info - interpret sensor for hwmon
  * @info: pointer to sensor info struct
  *
@@ -1261,6 +1334,76 @@ static struct hwmon_chip_info hp_wmi_chip_info = {
 	.ops         = &hp_wmi_hwmon_ops,
 	.info        = NULL,
 };
+
+static struct hp_wmi_info *match_fan_event(struct hp_wmi_sensors *state,
+					   const char *event_description)
+{
+	struct hp_wmi_info **ptr_info = state->info_map[hwmon_fan];
+	u8 fan_count = state->channel_count[hwmon_fan];
+	struct hp_wmi_info *info;
+	const char *name;
+	u8 i;
+
+	/* Fan event has Description "X Speed". Sensor has name "X[ Speed]". */
+
+	for (i = 0; i < fan_count; i++, ptr_info++) {
+		info = *ptr_info;
+		name = info->nsensor.name;
+
+		if (strstr(event_description, name))
+			return info;
+	}
+
+	return NULL;
+}
+
+static u8 match_temp_events(struct hp_wmi_sensors *state,
+			    const char *event_description,
+			    struct hp_wmi_info *temp_info[])
+{
+	struct hp_wmi_info **ptr_info = state->info_map[hwmon_temp];
+	u8 temp_count = state->channel_count[hwmon_temp];
+	struct hp_wmi_info *info;
+	const char *name;
+	u8 count = 0;
+	bool is_cpu;
+	bool is_sys;
+	u8 i;
+
+	/* Description either "CPU Thermal Index" or "Chassis Thermal Index". */
+
+	is_cpu = !strcmp(event_description, HP_WMI_PATTERN_CPU_TEMP);
+	is_sys = !strcmp(event_description, HP_WMI_PATTERN_SYS_TEMP);
+	if (!is_cpu && !is_sys)
+		return 0;
+
+	/*
+	 * CPU event: Match one sensor with Name either "CPU Thermal Index" or
+	 * "CPU Temperature", or multiple with Name(s) "CPU[#] Temperature".
+	 *
+	 * Chassis event: Match one sensor with Name either
+	 * "Chassis Thermal Index" or "System Ambient Temperature".
+	 */
+
+	for (i = 0; i < temp_count; i++, ptr_info++) {
+		info = *ptr_info;
+		name = info->nsensor.name;
+
+		if ((is_cpu && (!strcmp(name, HP_WMI_PATTERN_CPU_TEMP) ||
+				!strcmp(name, HP_WMI_PATTERN_CPU_TEMP2))) ||
+		    (is_sys && (!strcmp(name, HP_WMI_PATTERN_SYS_TEMP) ||
+				!strcmp(name, HP_WMI_PATTERN_SYS_TEMP2)))) {
+			temp_info[0] = info;
+			return 1;
+		}
+
+		if (is_cpu && (strstr(name, HP_WMI_PATTERN_CPU) &&
+			       strstr(name, HP_WMI_PATTERN_TEMP)))
+			temp_info[count++] = info;
+	}
+
+	return count;
+}
 
 static void init_platform_events(struct hp_wmi_sensors *state)
 {
