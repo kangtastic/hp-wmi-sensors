@@ -1119,7 +1119,10 @@ static int possible_states_show(struct seq_file *seqf, void *ignored)
 	u8 i;
 
 	for (i = 0; i < nsensor->possible_states_count; i++)
-		seq_printf(seqf, "%s\n", nsensor->possible_states[i]);
+		seq_printf(seqf, "%s%s", i ? "," : "",
+			   nsensor->possible_states[i]);
+
+	seq_puts(seqf, "\n");
 
 	return 0;
 }
@@ -1170,7 +1173,7 @@ static void hp_wmi_debugfs_init(struct hp_wmi_sensors *state)
 		return;
 	}
 
-	entries = debugfs_create_dir("sensors", debugfs);
+	entries = debugfs_create_dir("sensor", debugfs);
 
 	for (i = 0; i < state->count; i++, info++) {
 		nsensor = &info->nsensor;
