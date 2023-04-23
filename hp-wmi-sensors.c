@@ -1262,9 +1262,19 @@ static umode_t hp_wmi_hwmon_is_visible(const void *drvdata,
 				       u32 attr, int channel)
 {
 	const struct hp_wmi_sensors *state = drvdata;
+	const struct hp_wmi_info *info;
+
+	if (type == hwmon_intrusion)
+		return state->has_intrusion ? 0644 : 0;
 
 	if (!state->info_map[type] || !state->info_map[type][channel])
 		return 0;
+
+	info = state->info_map[type][channel];
+
+	if ((type == hwmon_temp && attr == hwmon_temp_alarm) ||
+	    (type == hwmon_fan  && attr == hwmon_fan_alarm))
+		return info->has_alarm ? 0444 : 0;
 
 	return 0444;
 }
@@ -1277,7 +1287,22 @@ static int hp_wmi_hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 	struct hp_wmi_info *info;
 	int err;
 
+	if (type == hwmon_intrusion) {
+		*val = state->intrusion ? 1 : 0;
+
+		return 0;
+	}
+
 	info = state->info_map[type][channel];
+
+	if ((type == hwmon_temp && attr == hwmon_temp_alarm) ||
+	    (type == hwmon_fan  && attr == hwmon_fan_alarm)) {
+		*val = info->alarm ? 1 : 0;
+		info->alarm = false;
+
+		return 0;
+	}
+
 	nsensor = &info->nsensor;
 
 	err = hp_wmi_update_info(state, info);
@@ -1306,20 +1331,19 @@ static int hp_wmi_hwmon_read_string(struct device *dev,
 	return 0;
 }
 
-static int add_channel_info(struct device *dev,
-			    struct hwmon_channel_info *channel_info,
-			    u8 count, enum hwmon_sensor_types type)
+static int hp_wmi_hwmon_write(struct device *dev, enum hwmon_sensor_types type,
+			      u32 attr, int channel, long val)
 {
-	u32 attr = hp_wmi_hwmon_attributes[type];
-	u32 *config;
+	struct hp_wmi_sensors *state = dev_get_drvdata(dev);
 
-	config = devm_kcalloc(dev, count + 1, sizeof(*config), GFP_KERNEL);
-	if (!config)
-		return -ENOMEM;
+	if (val || !state->intrusion)
+		return -EOPNOTSUPP;
 
-	channel_info->type = type;
-	channel_info->config = config;
-	memset32(config, attr, count);
+	mutex_lock(&state->lock);
+
+	state->intrusion = false;
+
+	mutex_unlock(&state->lock);
 
 	return 0;
 }
@@ -1328,6 +1352,7 @@ static const struct hwmon_ops hp_wmi_hwmon_ops = {
 	.is_visible  = hp_wmi_hwmon_is_visible,
 	.read	     = hp_wmi_hwmon_read,
 	.read_string = hp_wmi_hwmon_read_string,
+	.write	     = hp_wmi_hwmon_write,
 };
 
 static struct hwmon_chip_info hp_wmi_chip_info = {
@@ -1405,6 +1430,82 @@ static u8 match_temp_events(struct hp_wmi_sensors *state,
 	return count;
 }
 
+/* hp_wmi_devm_debugfs_remove - devm callback for WMI event handler removal */
+static void hp_wmi_devm_notify_remove(void *ignored)
+{
+	wmi_remove_notify_handler(HP_WMI_EVENT_GUID);
+}
+
+/* hp_wmi_notify - WMI event notification handler */
+static void hp_wmi_notify(u32 value, void *context)
+{
+	struct hp_wmi_info *temp_info[HP_WMI_MAX_INSTANCES] = {};
+	struct acpi_buffer out = { ACPI_ALLOCATE_BUFFER, NULL };
+	struct hp_wmi_sensors *state = context;
+	struct device *dev = &state->wdev->dev;
+	struct hp_wmi_info *fan_info;
+	struct hp_wmi_event event;
+	union acpi_object *wobj;
+	acpi_status err;
+	int event_type;
+	u8 count;
+
+	/*
+	 * The following warning may occur in the kernel log:
+	 *
+	 *   ACPI Warning: \_SB.WMID._WED: Return type mismatch -
+	 *     found Package, expected Integer/String/Buffer
+	 *
+	 * Non-business-class HP systems have the same WMI event GUID. Per the
+	 * existing hp-wmi driver, the event data on those systems is indeed
+	 * an ACPI_BUFFER containing a raw struct of 8 or 16 bytes. Because we
+	 * validate the event data to ensure it is an ACPI_PACKAGE containing
+	 * a HPBIOS_BIOSEvent instance, we need not concern ourselves.
+	 */
+
+	mutex_lock(&state->lock);
+
+	err = wmi_get_event_data(value, &out);
+	if (ACPI_FAILURE(err))
+		goto out_unlock;
+
+	wobj = out.pointer;
+
+	err = populate_event_from_wobj(&event, wobj);
+	if (err) {
+		dev_warn(dev, "Bad event data (ACPI type %d)\n", wobj->type);
+		goto out_free_wobj;
+	}
+
+	event_type = classify_event(event.name, event.category);
+	switch (event_type) {
+	case HP_WMI_TYPE_AIR_FLOW:
+		fan_info = match_fan_event(state, event.description);
+		if (fan_info)
+			fan_info->alarm = true;
+		break;
+
+	case HP_WMI_TYPE_INTRUSION:
+		state->intrusion = true;
+		break;
+
+	case HP_WMI_TYPE_TEMPERATURE:
+		count = match_temp_events(state, event.description, temp_info);
+		while (count)
+			temp_info[--count]->alarm = true;
+		break;
+
+	default:
+		break;
+	}
+
+out_free_wobj:
+	kfree(wobj);
+
+out_unlock:
+	mutex_unlock(&state->lock);
+}
+
 static void init_platform_events(struct hp_wmi_sensors *state)
 {
 	struct hp_wmi_platform_events *pevents = state->pevents;
@@ -1431,27 +1532,25 @@ static void init_platform_events(struct hp_wmi_sensors *state)
 	dev_dbg(dev, "Found %u platform events\n", i);
 }
 
-static int hp_wmi_sensors_init(struct hp_wmi_sensors *state)
+static int init_numeric_sensors(struct hp_wmi_sensors *state,
+				struct hp_wmi_info *connected[], u8 *out_count)
 {
-	struct hp_wmi_info *active_info[HP_WMI_MAX_INSTANCES];
-	const struct hwmon_channel_info **ptr_channel_info;
-	struct hwmon_channel_info *channel_info;
+	struct hp_wmi_info ***info_map = state->info_map;
+	u8 *channel_count = state->channel_count;
 	struct device *dev = &state->wdev->dev;
 	struct hp_wmi_info *info = state->info;
 	struct hp_wmi_numeric_sensor *nsensor;
-	u8 channel_count[hwmon_max] = {};
+	u8 type_index[hwmon_max] = {};
 	enum hwmon_sensor_types type;
 	union acpi_object *wobj;
-	struct device *hwdev;
 	u8 type_count = 0;
-	u8 channel;
+	u8 count = 0;
 	int wtype;
 	int err;
+	u8 c;
 	u8 i;
 
-	enumerate_platform_events(state);
-
-	for (i = 0, channel = 0; i < HP_WMI_MAX_INSTANCES; i++, info++) {
+	for (i = 0; i < HP_WMI_MAX_INSTANCES; i++, info++) {
 		wobj = hp_wmi_get_wobj(HP_WMI_NUMERIC_SENSOR_GUID, i);
 		if (!wobj)
 			break;
@@ -1480,7 +1579,7 @@ static int hp_wmi_sensors_init(struct hp_wmi_sensors *state)
 
 		interpret_info(info);
 
-		active_info[channel++] = info;
+		connected[count++] = info;
 
 out_free_wobj:
 		kfree(wobj);
@@ -1489,62 +1588,256 @@ out_free_wobj:
 			return err;
 	}
 
-	dev_dbg(dev, "Found %u sensors (%u active, %u types)\n",
-		i, channel, type_count);
+	dev_dbg(dev, "Found %u sensors (%u connected, %u types)\n",
+		i, count, type_count);
 
 	state->count = i;
 	if (!state->count)
 		return -ENODATA;
 
-	hp_wmi_debugfs_init(state);
+	for (i = 0; i < count; i++) {
+		info = connected[i];
+		type = info->type;
+		c = type_index[type]++;
 
-	if (!channel)
-		return 0; /* Not an error, but debugfs only. */
+		if (!info_map[type]) {
+			info_map[type] = devm_kcalloc(dev, channel_count[type],
+						      sizeof(*info_map),
+						      GFP_KERNEL);
+			if (!info_map[type])
+				return -ENOMEM;
+		}
 
-	if (channel_count[hwmon_temp]) {
-		channel_count[hwmon_chip] = 1;
-		type_count++;
+		info_map[type][c] = info;
 	}
 
-	memcpy(state->channel_count, channel_count, sizeof(channel_count));
+	*out_count = count;
+
+	return 0;
+}
+
+static bool find_event_attributes(struct hp_wmi_sensors *state)
+{
+	/*
+	 * The existence of this HPBIOS_PlatformEvents instance:
+	 *
+	 *   {
+	 *     Name = "Rear Chassis Fan0 Stall";
+	 *     Description = "Rear Chassis Fan0 Speed";
+	 *     Category = 3;           // "Sensor"
+	 *     PossibleSeverity = 25;  // "Critical Failure"
+	 *     PossibleStatus = 5;     // "Predictive Failure"
+	 *     [...]
+	 *   }
+	 *
+	 * means that this HPBIOS_BIOSEvent instance may occur:
+	 *
+	 *   {
+	 *     Name = "Rear Chassis Fan0 Stall";
+	 *     Description = "Rear Chassis Fan0 Speed";
+	 *     Category = 3;           // "Sensor"
+	 *     Severity = 25;          // "Critical Failure"
+	 *     Status = 5;             // "Predictive Failure"
+	 *   }
+	 *
+	 * After the event occurs (e.g. because the fan was unplugged),
+	 * polling the related HPBIOS_BIOSNumericSensor instance gives:
+	 *
+	 *   {
+	 *      Name = "Rear Chassis Fan0";
+	 *      Description = "Reports rear chassis fan0 speed";
+	 *      OperationalStatus = 5; // "Predictive Failure", was 3 ("OK")
+	 *      CurrentReading = 0;
+	 *      [...]
+	 *   }
+	 *
+	 * In this example, the hwmon fan channel for "Rear Chassis Fan0"
+	 * should support the alarm flag and have it be set if the related
+	 * HPBIOS_BIOSEvent instance occurs.
+	 *
+	 * In addition to fan events, temperature (CPU/chassis) and intrusion
+	 * events are relevant to hwmon [2]. Note that much information in [2]
+	 * is unreliable; it is referenced in addition to ACPI dumps [3] merely
+	 * to support the conclusion that sensor and event names/descriptions
+	 * are systematic enough to allow this driver to match them.
+	 *
+	 * Complications and limitations:
+	 *
+	 *   - Strings are freeform and may vary, cf. sensor Name "CPU0 Fan"
+	 *     on a Z420 vs. "CPU Fan Speed" on an EliteOne 800 G1.
+	 *   - Leading/trailing whitespace is a rare but real possibility [3].
+	 *   - The HPBIOS_PlatformEvents object may not exist or its instances
+	 *     may show that the system only has e.g. BIOS setting-related
+	 *     events (cf. the ProBook 4540s and ProBook 470 G0 [3]).
+	 */
+
+	struct hp_wmi_info *temp_info[HP_WMI_MAX_INSTANCES] = {};
+	struct hp_wmi_platform_events *pevents = state->pevents;
+	u8 pevents_count = state->pevents_count;
+	const char *event_description;
+	struct hp_wmi_info *fan_info;
+	bool has_events = false;
+	const char *event_name;
+	u32 event_category;
+	int event_type;
+	u8 count;
+	u8 i;
+
+	for (i = 0; i < pevents_count; i++, pevents++) {
+		event_name = pevents->name;
+		event_description = pevents->description;
+		event_category = pevents->category;
+
+		event_type = classify_event(event_name, event_category);
+		switch (event_type) {
+		case HP_WMI_TYPE_AIR_FLOW:
+			fan_info = match_fan_event(state, event_description);
+			if (!fan_info)
+				break;
+
+			fan_info->has_alarm = true;
+			has_events = true;
+			break;
+
+		case HP_WMI_TYPE_INTRUSION:
+			state->has_intrusion = true;
+			has_events = true;
+			break;
+
+		case HP_WMI_TYPE_TEMPERATURE:
+			count = match_temp_events(state, event_description,
+						  temp_info);
+			if (!count)
+				break;
+
+			while (count)
+				temp_info[--count]->has_alarm = true;
+			has_events = true;
+			break;
+
+		default:
+			break;
+		}
+	}
+
+	return has_events;
+}
+
+static int make_chip_info(struct hp_wmi_sensors *state, bool has_events)
+{
+	const struct hwmon_channel_info **ptr_channel_info;
+	struct hp_wmi_info ***info_map = state->info_map;
+	u8 *channel_count = state->channel_count;
+	struct hwmon_channel_info *channel_info;
+	struct device *dev = &state->wdev->dev;
+	enum hwmon_sensor_types type;
+	u8 type_count = 0;
+	u32 *config;
+	u32 attr;
+	u8 count;
+	u8 i;
+
+	if (channel_count[hwmon_temp])
+		channel_count[hwmon_chip] = 1;
+
+	if (has_events && state->has_intrusion)
+		channel_count[hwmon_intrusion] = 1;
+
+	for (type = hwmon_chip; type < hwmon_max; type++)
+		type_count += channel_count[type];
 
 	channel_info = devm_kcalloc(dev, type_count,
-				    sizeof(*channel_info),
-				    GFP_KERNEL);
+				    sizeof(*channel_info), GFP_KERNEL);
 	if (!channel_info)
 		return -ENOMEM;
 
 	ptr_channel_info = devm_kcalloc(dev, type_count + 1,
-					sizeof(*ptr_channel_info),
-					GFP_KERNEL);
+					sizeof(*ptr_channel_info), GFP_KERNEL);
 	if (!ptr_channel_info)
 		return -ENOMEM;
 
 	hp_wmi_chip_info.info = ptr_channel_info;
 
 	for (type = hwmon_chip; type < hwmon_max; type++) {
-		if (!channel_count[type])
+		count = channel_count[type];
+		if (!count)
 			continue;
 
-		err = add_channel_info(dev, channel_info,
-				       channel_count[type], type);
-		if (err)
-			return err;
+		config = devm_kcalloc(dev, count + 1,
+				      sizeof(*config), GFP_KERNEL);
+		if (!config)
+			return -ENOMEM;
+
+		attr = hp_wmi_hwmon_attributes[type];
+		channel_info->type = type;
+		channel_info->config = config;
+		memset32(config, attr, count);
 
 		*ptr_channel_info++ = channel_info++;
 
-		state->info_map[type] = devm_kcalloc(dev, channel_count[type],
-						     sizeof(*state->info_map),
-						     GFP_KERNEL);
-		if (!state->info_map[type])
-			return -ENOMEM;
+		if (!has_events || (type != hwmon_temp && type != hwmon_fan))
+			continue;
+
+		attr = type == hwmon_temp ? HWMON_T_ALARM : HWMON_F_ALARM;
+
+		for (i = 0; i < count; i++)
+			if (info_map[type][i]->has_alarm)
+				config[i] |= attr;
 	}
 
-	while (channel > 0) {
-		type = active_info[--channel]->type;
-		i = --channel_count[type];
-		state->info_map[type][i] = active_info[channel];
+	return 0;
+}
+
+static bool add_event_handler(struct hp_wmi_sensors *state)
+{
+	struct device *dev = &state->wdev->dev;
+	int err;
+
+	err = wmi_install_notify_handler(HP_WMI_EVENT_GUID,
+					 hp_wmi_notify, state);
+	if (err) {
+		dev_info(dev, "Failed to subscribe to WMI event\n");
+		return false;
 	}
+
+	err = devm_add_action(dev, hp_wmi_devm_notify_remove, NULL);
+	if (err) {
+		wmi_remove_notify_handler(HP_WMI_EVENT_GUID);
+		return false;
+	}
+
+	return true;
+}
+
+static int hp_wmi_sensors_init(struct hp_wmi_sensors *state)
+{
+	struct hp_wmi_info *connected[HP_WMI_MAX_INSTANCES];
+	struct device *dev = &state->wdev->dev;
+	struct device *hwdev;
+	bool has_events;
+	u8 count;
+	int err;
+
+	init_platform_events(state);
+
+	err = init_numeric_sensors(state, connected, &count);
+	if (err)
+		return err;
+
+	hp_wmi_debugfs_init(state);
+
+	if (!count)
+		return 0; /* Not an error, but debugfs only. */
+
+	has_events = find_event_attributes(state);
+
+	/* Survive failure to install WMI event handler. */
+	if (has_events && !add_event_handler(state))
+		has_events = false;
+
+	err = make_chip_info(state, has_events);
+	if (err)
+		return err;
 
 	hwdev = devm_hwmon_device_register_with_info(dev, "hp_wmi_sensors",
 						     state, &hp_wmi_chip_info,
