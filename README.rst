@@ -1,114 +1,157 @@
 .. SPDX-License-Identifier: GPL-2.0-or-later
 
-.. include:: <isonum.txt>
-
 Linux HP WMI Sensors Driver
 ===========================
 
 Description
 -----------
 
-Hewlett-Packard business-class computers report hardware monitoring information
-via Windows Management Instrumentation (WMI). This driver exposes that
-information to the Linux ``hwmon`` subsystem, allowing familiar userspace
-utilities like ``sensors`` to gather numeric sensor readings.
+Hewlett-Packard (and some HP Compaq) business-class computers report hardware
+monitoring information via Windows Management Instrumentation (WMI). This
+driver exposes that information to the Linux ``hwmon`` subsystem, allowing
+userspace utilities like ``sensors`` to gather numeric sensor readings.
 
 Installation, uninstallation, and usage
 ---------------------------------------
 
 Assuming the existence of a relatively up-to-date development environment
 suitable for building Linux kernel modules, including kernel headers, a GCC
-compiler toolchain, and DKMS, simply issuing::
+compiler toolchain, and DKMS, simply issuing the following commands should be
+sufficient to build/install and uninstall the driver, respectively::
 
     $ sudo make dkms
 
-should be sufficient to build and install the driver, and::
-
     $ sudo make dkms_clean
-
-should likewise be sufficient to uninstall it.
 
 Once installed, the driver may optionally be set to load automatically upon
 system startup. Refer to the documentation for your Linux distribution for
 specific instructions.
 
+To build and load the module for the current session only, issue::
+
+    $ make
+
+    $ sudo insmod hp-wmi-sensors.ko
+
 ``sysfs`` interface
 -------------------
 
 When the driver is loaded, it discovers the sensors available on the current
-system and creates the following read-only ``sysfs`` attributes as appropriate
-within ``/sys/class/hwmon/hwmonX``:
+system and creates the following ``sysfs`` attributes as necessary within
+``/sys/class/hwmon/hwmon[X]``:
 
-================ ==========================================
-Name		 Description
-================ ==========================================
-curr[X]_input    Current in milliamperes (mA).
-curr[X]_label    Current sensor label.
-fan[X]_input     Fan speed in RPM.
-fan[X]_label     Fan sensor label.
-fan[X]_fault     Fan sensor fault indicator.
-in[X]_input      Voltage in millivolts (mV).
-in[X]_label      Voltage sensor label.
-temp[X]_input    Temperature in millidegrees Celsius (m°C).
-temp[X]_label    Temperature sensor label.
-temp[X]_fault    Temperature sensor fault indicator.
-================ ==========================================
+(``[X]`` is some number that depends on other system components.)
 
-Here, ``X`` is some number that depends on other available sensors and on other
-system hardware components.
+======================= ======= ==========================================
+Name			Perm	Description
+======================= ======= ==========================================
+curr[X]_input           RO      Current in milliamperes (mA).
+curr[X]_label           RO      Current sensor label.
+fan[X]_input            RO      Fan speed in RPM.
+fan[X]_label            RO      Fan sensor label.
+fan[X]_fault            RO      Fan sensor fault indicator.
+fan[X]_alarm            RO      Fan sensor alarm indicator.
+in[X]_input             RO      Voltage in millivolts (mV).
+in[X]_label             RO      Voltage sensor label.
+temp[X]_input           RO      Temperature in millidegrees Celsius (m°C).
+temp[X]_label           RO      Temperature sensor label.
+temp[X]_fault           RO      Temperature sensor fault indicator.
+temp[X]_alarm           RO      Temperature sensor alarm indicator.
+intrusion[X]_alarm      RW      Chassis intrusion alarm indicator.
+======================= ======= ==========================================
 
 ``fault`` attributes
   Reading ``1`` instead of ``0`` as the ``fault`` attribute for a sensor
-  indicates that the sensor has encountered some issue during operation such
-  that measurements from it should no longer be trusted.
+  indicates that it has encountered some issue during operation such that
+  measurements from it should not be trusted. If a sensor with the fault
+  condition later recovers, reading this attribute will return ``0`` again.
+
+``alarm`` attributes
+  Reading ``1`` instead of ``0`` as the ``alarm`` attribute for a sensor
+  indicates that one of the following has occurred, depending on its type:
+
+  - ``fan``: The fan has stalled or been disconnected while running.
+  - ``temp``: The sensor reading has reached a critical threshold. The exact
+    threshold is system-dependent.
+  - ``intrusion``: The system's chassis has been opened.
+
+  After ``1`` is read from an ``alarm`` attribute, the attribute resets itself
+  and returns ``0`` on subsequent reads. As an exception, an
+  ``intrusion[X]_alarm`` can only be manually reset by writing ``0`` to it.
 
 ``debugfs`` interface
 ---------------------
 
-The standard ``hwmon`` interface in ``sysfs`` exposes sensors of several common
-types that are connected and operating normally as of driver initialization.
-However, there are usually other sensors on the WMI side that do not meet these
-criteria. This driver therefore provides a ``debugfs`` interface in
-``/sys/kernel/debug/hp-wmi-sensors-X`` that allows read-only access to *all* HP
-WMI sensors on the current system.
-
 .. warning:: The ``debugfs`` interface is only available when the kernel is
-             compiled with option ``CONFIG_DEBUG_FS``, and its implementation
-             is subject to change without notice at any time.
+             compiled with option ``CONFIG_DEBUG_FS``, and is subject to
+             change without notice at any time.
 
-One numbered entry is created per sensor with the following attributes:
+The standard ``hwmon`` interface in ``sysfs`` exposes sensors of several
+common types that are connected as of driver initialization. However, there
+are usually other sensors on the WMI side that do not meet these criteria.
+In addition, a number of system-dependent "platform events" used for ``alarm``
+attributes may be present. A ``debugfs`` interface is therefore provided for
+read-only access to *all* HP WMI sensors and platform events on the system.
 
-=============================== ==========================================
+``/sys/kernel/debug/hp-wmi-sensors-[X]/sensor``
+contains one numbered entry per sensor with the following attributes:
+
+=============================== =======================================
 Name				Example
-=============================== ==========================================
+=============================== =======================================
 name                            ``CPU0 Fan``
 description                     ``Reports CPU0 fan speed``
 sensor_type                     ``12``
-other_sensor_type               ``(null)``
+other_sensor_type               (an empty string)
 operational_status              ``2``
 current_state                   ``Normal``
-possible_states                 ``Normal\nCaution\nCritical\nNot Present``
+possible_states                 ``Normal,Caution,Critical,Not Present``
 base_units                      ``19``
 unit_modifier                   ``0``
 current_reading                 ``1008``
-=============================== ==========================================
+=============================== =======================================
 
-These represent the properties of the underlying ``HP_BIOSNumericSensor`` WMI
-object. Contents may vary somewhat between systems. See [#]_ for more details.
+``/sys/kernel/debug/hp-wmi-sensors-[X]/platform_events``
+contains one numbered entry per platform event with the following attributes:
+
+=============================== ====================
+Name				Example
+=============================== ====================
+name                            ``CPU0 Fan Stall``
+description                     ``CPU0 Fan Speed``
+source_namespace                ``root\wmi``
+source_class                    ``HPBIOS_BIOSEvent``
+category                        ``3``
+possible_severity               ``25``
+possible_status                 ``5``
+=============================== ====================
+
+These represent the properties of the underlying ``HPBIOS_BIOSNumericSensor``
+and ``HPBIOS_PlatformEvents`` WMI objects, which vary between systems. See
+[#]_ for more details, including Managed Object Format (MOF) definitions.
 
 Known issues and limitations
 ----------------------------
 
-- Non-numeric HP sensor types such as intrusion sensors that belong to the
-  ``HP_BIOSStateSensor`` WMI object type are not supported.
-- HP's WMI implementation permits sensors to claim to be of any type. Even so,
-  oddball sensor types not implemented in hwmon will not be supported.
+- If the existing ``hp-wmi`` driver for non-business-class HP systems is
+  already loaded, ``alarm`` attributes will be unavailable. This is because
+  the same WMI event GUID used by this driver for ``alarm`` attributes is
+  used on those systems for e.g. laptop hotkeys.
+- Dubious sensor hardware and inconsistent system WMI implementations have
+  been observed to cause inaccurate readings and peculiar behavior, such as
+  alarms failing to occur or occurring only once per boot.
+- Only temperature, fan speed, and intrusion sensor types have been seen in
+  the wild so far. Support for voltage and current sensors is therefore
+  provisional.
+- Although HP WMI sensors may claim to be of any type, any oddball sensor
+  types unknown to hwmon will not be supported.
 
 Acknowledgements
 ----------------
 
-Portions of the code are based on ``asus-wmi-sensors`` [#]_ (@electrified)
-and ``corsair-psu`` [#]_ (@wgottwalt).
+Portions of the code are based on ``asus-wmi-sensors`` [#]_
+(`@electrified <https://github.com/electrified>`_)
+and ``corsair-psu`` [#]_ (`@wgottwalt <https://github.com/wgottwalt>`_).
 
 We sincerely thank the authors and maintainers of those projects for their
 exemplary contributions to the Linux community.
