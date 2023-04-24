@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * hwmon driver for HP business-class computers that report numeric
- * sensor data via Windows Management Instrumentation (WMI).
+ * hwmon driver for HP (and some HP Compaq) business-class computers that
+ * report numeric sensor data via Windows Management Instrumentation (WMI).
  *
  * Copyright (C) 2023 James Seo <james@equiv.tech>
  *
