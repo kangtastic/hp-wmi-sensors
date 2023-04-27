@@ -349,7 +349,6 @@ struct hp_wmi_event {
  * struct hp_wmi_info - sensor info
  * @nsensor: numeric sensor properties
  * @instance: its WMI instance number
- * @is_active: whether the following fields are valid
  * @has_alarm: whether sensor has an alarm flag
  * @alarm: alarm flag
  * @type: its hwmon sensor type
@@ -360,7 +359,6 @@ struct hp_wmi_info {
 	struct hp_wmi_numeric_sensor nsensor;
 	u8 instance;
 
-	bool is_active;
 	bool has_alarm;
 	bool alarm;
 	enum hwmon_sensor_types type;
@@ -1577,7 +1575,6 @@ static int init_numeric_sensors(struct hp_wmi_sensors *state,
 			type_count++;
 		channel_count[type]++;
 
-		info->is_active = true;
 		info->type = type;
 
 		interpret_info(info);
