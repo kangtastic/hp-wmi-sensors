@@ -1370,7 +1370,7 @@ static struct hp_wmi_info *match_fan_event(struct hp_wmi_sensors *state,
 	const char *name;
 	u8 i;
 
-	/* Fan event has Description "X Speed". Sensor has name "X[ Speed]". */
+	/* Fan event has Description "X Speed". Sensor has Name "X[ Speed]". */
 
 	for (i = 0; i < fan_count; i++, ptr_info++) {
 		info = *ptr_info;
