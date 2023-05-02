@@ -1165,11 +1165,10 @@ static void hp_wmi_debugfs_init(struct hp_wmi_sensors *state)
 	if (IS_ERR(debugfs))
 		return;
 
-	err = devm_add_action(dev, hp_wmi_devm_debugfs_remove, debugfs);
-	if (err) {
-		debugfs_remove(debugfs);
+	err = devm_add_action_or_reset(dev, hp_wmi_devm_debugfs_remove,
+				       debugfs);
+	if (err)
 		return;
-	}
 
 	entries = debugfs_create_dir("sensor", debugfs);
 
@@ -1797,11 +1796,9 @@ static bool add_event_handler(struct hp_wmi_sensors *state)
 		return false;
 	}
 
-	err = devm_add_action(dev, hp_wmi_devm_notify_remove, NULL);
-	if (err) {
-		wmi_remove_notify_handler(HP_WMI_EVENT_GUID);
+	err = devm_add_action_or_reset(dev, hp_wmi_devm_notify_remove, NULL);
+	if (err)
 		return false;
-	}
 
 	return true;
 }
