@@ -349,6 +349,7 @@ struct hp_wmi_event {
  * struct hp_wmi_info - sensor info
  * @nsensor: numeric sensor properties
  * @instance: its WMI instance number
+ * @state: pointer to driver state
  * @has_alarm: whether sensor has an alarm flag
  * @alarm: alarm flag
  * @type: its hwmon sensor type
@@ -358,7 +359,7 @@ struct hp_wmi_event {
 struct hp_wmi_info {
 	struct hp_wmi_numeric_sensor nsensor;
 	u8 instance;
-
+	void *state; /* void *: avoid forward declaration */
 	bool has_alarm;
 	bool alarm;
 	enum hwmon_sensor_types type;
@@ -382,9 +383,9 @@ struct hp_wmi_info {
  */
 struct hp_wmi_sensors {
 	struct wmi_device *wdev;
-	struct hp_wmi_info info[HP_WMI_MAX_INSTANCES];
+	struct hp_wmi_info *info;
 	struct hp_wmi_info **info_map[hwmon_max];
-	struct hp_wmi_platform_events pevents[HP_WMI_MAX_INSTANCES];
+	struct hp_wmi_platform_events *pevents;
 	u8 count;
 	u8 channel_count[hwmon_max];
 	u8 pevents_count;
@@ -1063,37 +1064,9 @@ static int fungible_show(struct seq_file *seqf, enum hp_wmi_property prop)
 	struct hp_wmi_info *info;
 	int err;
 
-	switch (prop) {
-	case HP_WMI_PROPERTY_OPERATIONAL_STATUS:
-		nsensor = container_of(seqf->private,
-				       struct hp_wmi_numeric_sensor,
-				       operational_status);
-		break;
-
-	case HP_WMI_PROPERTY_CURRENT_STATE:
-		nsensor = container_of(seqf->private,
-				       struct hp_wmi_numeric_sensor,
-				       current_state);
-		break;
-
-	case HP_WMI_PROPERTY_UNIT_MODIFIER:
-		nsensor = container_of(seqf->private,
-				       struct hp_wmi_numeric_sensor,
-				       unit_modifier);
-		break;
-
-	case HP_WMI_PROPERTY_CURRENT_READING:
-		nsensor = container_of(seqf->private,
-				       struct hp_wmi_numeric_sensor,
-				       current_reading);
-		break;
-
-	default:
-		return -EOPNOTSUPP;
-	}
-
-	info = container_of(nsensor, struct hp_wmi_info, nsensor);
-	state = container_of(info, struct hp_wmi_sensors, info[info->instance]);
+	info = seqf->private;
+	state = info->state;
+	nsensor = &info->nsensor;
 
 	err = hp_wmi_update_info(state, info);
 	if (err)
@@ -1117,7 +1090,7 @@ static int fungible_show(struct seq_file *seqf, enum hp_wmi_property prop)
 		break;
 
 	default:
-		break;
+		return -EOPNOTSUPP;
 	}
 
 	return 0;
@@ -1218,12 +1191,10 @@ static void hp_wmi_debugfs_init(struct hp_wmi_sensors *state)
 				    &basic_string_fops);
 
 		debugfs_create_file("operational_status", 0444, dir,
-				    &nsensor->operational_status,
-				    &operational_status_fops);
+				    info, &operational_status_fops);
 
 		debugfs_create_file("current_state", 0444, dir,
-				    (void *)&nsensor->current_state,
-				    &current_state_fops);
+				    info, &current_state_fops);
 
 		debugfs_create_file("possible_states", 0444, dir,
 				    nsensor, &possible_states_fops);
@@ -1232,12 +1203,10 @@ static void hp_wmi_debugfs_init(struct hp_wmi_sensors *state)
 				   &nsensor->base_units);
 
 		debugfs_create_file("unit_modifier", 0444, dir,
-				    &nsensor->unit_modifier,
-				    &unit_modifier_fops);
+				    info, &unit_modifier_fops);
 
 		debugfs_create_file("current_reading", 0444, dir,
-				    &nsensor->current_reading,
-				    &current_reading_fops);
+				    info, &current_reading_fops);
 	}
 
 	entries = debugfs_create_dir("platform_events", debugfs);
@@ -1530,30 +1499,41 @@ out_unlock:
 	mutex_unlock(&state->lock);
 }
 
-static void init_platform_events(struct hp_wmi_sensors *state)
+static int init_platform_events(struct hp_wmi_sensors *state)
 {
-	struct hp_wmi_platform_events *pevents = state->pevents;
+	struct hp_wmi_platform_events *pevents_arr;
+	struct hp_wmi_platform_events *pevents;
 	struct device *dev = &state->wdev->dev;
 	union acpi_object *wobj;
+	u8 count;
 	int err;
 	u8 i;
 
-	for (i = 0; i < HP_WMI_MAX_INSTANCES; i++, pevents++) {
+	count = hp_wmi_wobj_instance_count(HP_WMI_PLATFORM_EVENTS_GUID);
+
+	pevents_arr = devm_kcalloc(dev, count, sizeof(*pevents), GFP_KERNEL);
+	if (!pevents_arr)
+		return -ENOMEM;
+
+	for (i = 0, pevents = pevents_arr; i < count; i++, pevents++) {
 		wobj = hp_wmi_get_wobj(HP_WMI_PLATFORM_EVENTS_GUID, i);
 		if (!wobj)
-			break;
+			return -EIO;
 
 		err = populate_platform_events_from_wobj(dev, pevents, wobj);
 
 		kfree(wobj);
 
 		if (err)
-			break;
+			return err;
 	}
 
-	state->pevents_count = i;
+	state->pevents = pevents_arr;
+	state->pevents_count = count;
 
-	dev_dbg(dev, "Found %u platform events\n", i);
+	dev_dbg(dev, "Found %u platform events\n", count);
+
+	return 0;
 }
 
 static int init_numeric_sensors(struct hp_wmi_sensors *state,
@@ -1562,24 +1542,35 @@ static int init_numeric_sensors(struct hp_wmi_sensors *state,
 	struct hp_wmi_info ***info_map = state->info_map;
 	u8 *channel_count = state->channel_count;
 	struct device *dev = &state->wdev->dev;
-	struct hp_wmi_info *info = state->info;
 	struct hp_wmi_numeric_sensor *nsensor;
 	u8 type_index[hwmon_max] = {};
 	enum hwmon_sensor_types type;
+	struct hp_wmi_info *info_arr;
+	struct hp_wmi_info *info;
 	union acpi_object *wobj;
 	u8 type_count = 0;
+	u8 instance_count;
 	u8 count = 0;
 	int wtype;
 	int err;
 	u8 c;
 	u8 i;
 
-	for (i = 0; i < HP_WMI_MAX_INSTANCES; i++, info++) {
+	instance_count = hp_wmi_wobj_instance_count(HP_WMI_NUMERIC_SENSOR_GUID);
+	if (!instance_count)
+		return -ENODATA;
+
+	info_arr = devm_kcalloc(dev, instance_count, sizeof(*info), GFP_KERNEL);
+	if (!info_arr)
+		return -ENOMEM;
+
+	for (i = 0, info = info_arr; i < instance_count; i++, info++) {
 		wobj = hp_wmi_get_wobj(HP_WMI_NUMERIC_SENSOR_GUID, i);
 		if (!wobj)
-			break;
+			return -EIO;
 
 		info->instance = i;
+		info->state = state;
 		nsensor = &info->nsensor;
 
 		err = populate_numeric_sensor_from_wobj(dev, nsensor, wobj);
@@ -1611,10 +1602,6 @@ static int init_numeric_sensors(struct hp_wmi_sensors *state,
 	dev_dbg(dev, "Found %u sensors (%u connected, %u types)\n",
 		i, count, type_count);
 
-	state->count = i;
-	if (!state->count)
-		return -ENODATA;
-
 	for (i = 0; i < count; i++) {
 		info = connected[i];
 		type = info->type;
@@ -1631,6 +1618,8 @@ static int init_numeric_sensors(struct hp_wmi_sensors *state,
 		info_map[type][c] = info;
 	}
 
+	state->info = info_arr;
+	state->count = instance_count;
 	*out_count = count;
 
 	return 0;
@@ -1836,7 +1825,9 @@ static int hp_wmi_sensors_init(struct hp_wmi_sensors *state)
 	u8 count;
 	int err;
 
-	init_platform_events(state);
+	err = init_platform_events(state);
+	if (err)
+		return err;
 
 	err = init_numeric_sensors(state, connected, &count);
 	if (err)
