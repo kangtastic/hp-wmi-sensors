@@ -1560,15 +1560,18 @@ static int init_numeric_sensors(struct hp_wmi_sensors *state,
 		nsensor = &info->nsensor;
 
 		err = populate_numeric_sensor_from_wobj(dev, nsensor, wobj);
+
+		kfree(wobj);
+
 		if (err)
-			goto out_free_wobj;
+			return err;
 
 		if (!numeric_sensor_is_connected(nsensor))
-			goto out_free_wobj;
+			continue;
 
 		wtype = classify_numeric_sensor(nsensor);
 		if (wtype < 0)
-			goto out_free_wobj;
+			continue;
 
 		type = hp_wmi_hwmon_type_map[wtype];
 		if (!channel_count[type])
@@ -1580,12 +1583,6 @@ static int init_numeric_sensors(struct hp_wmi_sensors *state,
 		interpret_info(info);
 
 		connected[count++] = info;
-
-out_free_wobj:
-		kfree(wobj);
-
-		if (err)
-			return err;
 	}
 
 	dev_dbg(dev, "Found %u sensors (%u connected, %u types)\n",
