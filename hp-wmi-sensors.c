@@ -1746,7 +1746,8 @@ static int make_chip_info(struct hp_wmi_sensors *state, bool has_events)
 		channel_count[hwmon_intrusion] = 1;
 
 	for (type = hwmon_chip; type < hwmon_max; type++)
-		type_count += channel_count[type];
+		if (channel_count[type])
+			type_count++;
 
 	channel_info = devm_kcalloc(dev, type_count,
 				    sizeof(*channel_info), GFP_KERNEL);
