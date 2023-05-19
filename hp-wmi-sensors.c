@@ -25,11 +25,11 @@
 #include <linux/units.h>
 #include <linux/wmi.h>
 
+#define HP_WMI_EVENT_NAMESPACE		 "root\\WMI"
+#define HP_WMI_EVENT_CLASS		 "HPBIOS_BIOSEvent"
 #define HP_WMI_EVENT_GUID		 "95F24279-4D7B-4334-9387-ACCDC67EF61C"
 #define HP_WMI_NUMERIC_SENSOR_GUID	 "8F1F6435-9F42-42C8-BADC-0E9424F20C9A"
 #define HP_WMI_PLATFORM_EVENTS_GUID	 "41227C2D-80E1-423F-8B8E-87E32755A0EB"
-#define HP_WMI_PLATFORM_EVENTS_CLASS	 "HPBIOS_BIOSEvent"
-#define HP_WMI_PLATFORM_EVENTS_NAMESPACE "root\\WMI"
 
 /* Patterns for recognizing sensors and matching events to channels. */
 
@@ -863,15 +863,14 @@ populate_platform_events_from_wobj(struct device *dev,
 			break;
 
 		case HP_WMI_PLATFORM_EVENTS_PROPERTY_SOURCE_NAMESPACE:
-			if (strcasecmp(HP_WMI_PLATFORM_EVENTS_NAMESPACE,
-				       string))
+			if (strcasecmp(HP_WMI_EVENT_NAMESPACE, string))
 				return -EINVAL;
 
 			pevents->source_namespace = string;
 			break;
 
 		case HP_WMI_PLATFORM_EVENTS_PROPERTY_SOURCE_CLASS:
-			if (strcasecmp(HP_WMI_PLATFORM_EVENTS_CLASS, string))
+			if (strcasecmp(HP_WMI_EVENT_CLASS, string))
 				return -EINVAL;
 
 			pevents->source_class = string;
