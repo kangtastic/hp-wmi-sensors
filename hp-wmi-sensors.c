@@ -107,11 +107,13 @@ enum hp_wmi_property {
 	HP_WMI_PROPERTY_SENSOR_TYPE		   = 2,
 	HP_WMI_PROPERTY_OTHER_SENSOR_TYPE	   = 3,
 	HP_WMI_PROPERTY_OPERATIONAL_STATUS	   = 4,
-	HP_WMI_PROPERTY_CURRENT_STATE		   = 5,
+	HP_WMI_PROPERTY_SIZE			   = 5,
 	HP_WMI_PROPERTY_POSSIBLE_STATES		   = 6,
-	HP_WMI_PROPERTY_BASE_UNITS		   = 7,
-	HP_WMI_PROPERTY_UNIT_MODIFIER		   = 8,
-	HP_WMI_PROPERTY_CURRENT_READING		   = 9,
+	HP_WMI_PROPERTY_CURRENT_STATE		   = 7,
+	HP_WMI_PROPERTY_BASE_UNITS		   = 8,
+	HP_WMI_PROPERTY_UNIT_MODIFIER		   = 9,
+	HP_WMI_PROPERTY_CURRENT_READING		   = 10,
+	HP_WMI_PROPERTY_RATE_UNITS		   = 11,
 };
 
 static const acpi_object_type hp_wmi_property_map[] = {
@@ -120,11 +122,13 @@ static const acpi_object_type hp_wmi_property_map[] = {
 	[HP_WMI_PROPERTY_SENSOR_TYPE]		   = ACPI_TYPE_INTEGER,
 	[HP_WMI_PROPERTY_OTHER_SENSOR_TYPE]	   = ACPI_TYPE_STRING,
 	[HP_WMI_PROPERTY_OPERATIONAL_STATUS]	   = ACPI_TYPE_INTEGER,
-	[HP_WMI_PROPERTY_CURRENT_STATE]		   = ACPI_TYPE_STRING,
+	[HP_WMI_PROPERTY_SIZE]			   = ACPI_TYPE_INTEGER,
 	[HP_WMI_PROPERTY_POSSIBLE_STATES]	   = ACPI_TYPE_STRING,
+	[HP_WMI_PROPERTY_CURRENT_STATE]		   = ACPI_TYPE_STRING,
 	[HP_WMI_PROPERTY_BASE_UNITS]		   = ACPI_TYPE_INTEGER,
 	[HP_WMI_PROPERTY_UNIT_MODIFIER]		   = ACPI_TYPE_INTEGER,
 	[HP_WMI_PROPERTY_CURRENT_READING]	   = ACPI_TYPE_INTEGER,
+	[HP_WMI_PROPERTY_RATE_UNITS]		   = ACPI_TYPE_INTEGER,
 };
 
 enum hp_wmi_platform_events_property {
@@ -182,13 +186,19 @@ static const u32 hp_wmi_hwmon_attributes[hwmon_max] = {
 /*
  * struct hp_wmi_numeric_sensor - a HPBIOS_BIOSNumericSensor instance
  *
- * MOF definition [1]:
+ * Two variants of HPBIOS_BIOSNumericSensor are known. The first is specified
+ * in [1] and appears to be much more widespread. The second was discovered by
+ * decoding BMOF blobs [4], seems to be found only in some newer ZBook systems
+ * [3], and has two new properties and a slightly different property order.
+ *
+ * These differences don't matter on Windows, where WMI object properties are
+ * accessed by name. For us, supporting both variants gets ugly and hacky at
+ * times. The fun begins now; this struct is defined as per the new variant.
+ *
+ * Effective MOF definition:
  *
  *   #pragma namespace("\\\\.\\root\\HP\\InstrumentedBIOS");
- *
- *   [abstract]
- *   class HP_BIOSSensor
- *   {
+ *   class HPBIOS_BIOSNumericSensor {
  *     [read] string Name;
  *     [read] string Description;
  *     [read, ValueMap {"0","1","2","3","4","5","6","7","8","9",
@@ -206,12 +216,9 @@ static const u32 hp_wmi_hwmon_attributes[hwmon_max] = {
  *      "Dormant","Supporting Entity in Error","Completed",
  *      "Power Mode","DMTF Reserved","Vendor Reserved"}]
  *     uint32 OperationalStatus;
- *     [read] string CurrentState;
+ *     [read] uint32 Size;
  *     [read] string PossibleStates[];
- *   };
- *
- *   class HP_BIOSNumericSensor : HP_BIOSSensor
- *   {
+ *     [read] string CurrentState;
  *     [read, ValueMap {"0","1","2","3","4","5","6","7","8","9",
  *      "10","11","12","13","14","15","16","17","18","19","20",
  *      "21","22","23","24","25","26","27","28","29","30","31",
@@ -234,10 +241,22 @@ static const u32 hp_wmi_hwmon_attributes[hwmon_max] = {
  *     uint32 BaseUnits;
  *     [read] sint32 UnitModifier;
  *     [read] uint32 CurrentReading;
+ *     [read] uint32 RateUnits;
  *   };
  *
- *   class HPBIOS_BIOSNumericSensor : HP_BIOSNumericSensor
- *   {
+ * Effective MOF definition of old variant [1] (sans redundant info):
+ *
+ *   class HPBIOS_BIOSNumericSensor {
+ *     [read] string Name;
+ *     [read] string Description;
+ *     [read] uint32 SensorType;
+ *     [read] string OtherSensorType;
+ *     [read] uint32 OperationalStatus;
+ *     [read] string CurrentState;
+ *     [read] string PossibleStates[];
+ *     [read] uint32 BaseUnits;
+ *     [read] sint32 UnitModifier;
+ *     [read] uint32 CurrentReading;
  *   };
  */
 struct hp_wmi_numeric_sensor {
@@ -246,13 +265,13 @@ struct hp_wmi_numeric_sensor {
 	u32 sensor_type;
 	const char *other_sensor_type; /* Explains "Other" SensorType. */
 	u32 operational_status;
+	u8 size;		       /* Count of PossibleStates[]. */
+	const char **possible_states;
 	const char *current_state;
-	const char **possible_states;  /* Count may vary. */
 	u32 base_units;
 	s32 unit_modifier;
 	u32 current_reading;
-
-	u8 possible_states_count;
+	u32 rate_units;
 };
 
 /*
@@ -261,13 +280,10 @@ struct hp_wmi_numeric_sensor {
  * Instances of this object reveal the set of possible HPBIOS_BIOSEvent
  * instances for the current system, but it may not always be present.
  *
- * MOF definition:
+ * Effective MOF definition:
  *
  *   #pragma namespace("\\\\.\\root\\HP\\InstrumentedBIOS");
- *
- *   [abstract]
- *   class HP_PlatformEvents
- *   {
+ *   class HPBIOS_PlatformEvents {
  *     [read] string Name;
  *     [read] string Description;
  *     [read] string SourceNamespace;
@@ -291,10 +307,6 @@ struct hp_wmi_numeric_sensor {
  *      "Power Mode","DMTF Reserved","Vendor Reserved"}]
  *     uint32 PossibleStatus;
  *   };
- *
- *   class HPBIOS_PlatformEvents : HP_PlatformEvents
- *   {
- *   };
  */
 struct hp_wmi_platform_events {
 	const char *name;
@@ -309,12 +321,10 @@ struct hp_wmi_platform_events {
 /*
  * struct hp_wmi_event - a HPBIOS_BIOSEvent instance
  *
- * MOF definition [1] (corrected below from original):
+ * Effective MOF definition [1] (corrected below from original):
  *
  *   #pragma namespace("\\\\.\\root\\WMI");
- *
- *   class HP_BIOSEvent : WMIEvent
- *   {
+ *   class HPBIOS_BIOSEvent : WMIEvent {
  *     [read] string Name;
  *     [read] string Description;
  *     [read ValueMap {"0","1","2","3","4"}, Values {"Unknown",
@@ -335,10 +345,6 @@ struct hp_wmi_platform_events {
  *      "Dormant","Supporting Entity in Error","Completed",
  *      "Power Mode","DMTF Reserved","Vendor Reserved"}]
  *     uint32 Status;
- *   };
- *
- *   class HPBIOS_BIOSEvent : HP_BIOSEvent
- *   {
  *   };
  */
 struct hp_wmi_event {
@@ -501,61 +507,112 @@ static int extract_acpi_value(struct device *dev, union acpi_object *element,
 /*
  * check_numeric_sensor_wobj - validate a HPBIOS_BIOSNumericSensor instance
  * @wobj: pointer to WMI object instance to check
- * @possible_states_count: out pointer to count of possible states
+ * @out_size: out pointer to count of possible states
+ * @out_is_new: out pointer to whether this is a "new" variant object
  *
  * Returns 0 on success, or a negative error code on error.
  */
 static int check_numeric_sensor_wobj(const union acpi_object *wobj,
-				     u8 *possible_states_count)
+				     u8 *out_size, bool *out_is_new)
 {
 	acpi_object_type type = wobj->type;
 	int prop = HP_WMI_PROPERTY_NAME;
 	acpi_object_type valid_type;
 	union acpi_object *elements;
 	u32 elem_count;
-	u8 count = 0;
+	int last_prop;
+	bool is_new;
+	u8 count;
+	u32 j;
 	u32 i;
 
 	if (type != ACPI_TYPE_PACKAGE)
 		return -EINVAL;
 
+	/*
+	 * elements is a variable-length array of ACPI objects, one for
+	 * each property of the WMI object instance, except that the
+	 * strings in PossibleStates[] are flattened into this array
+	 * as if each individual string were a property by itself.
+	 */
+	elements = wobj->package.elements;
+
 	elem_count = wobj->package.count;
-	if (elem_count > HP_WMI_MAX_PROPERTIES)
+	if (elem_count <= HP_WMI_PROPERTY_SIZE ||
+	    elem_count > HP_WMI_MAX_PROPERTIES)
 		return -EINVAL;
 
-	elements = wobj->package.elements;
-	for (i = 0; i < elem_count; i++, prop++) {
-		if (prop > HP_WMI_PROPERTY_CURRENT_READING)
-			return -EINVAL;
+	type = elements[HP_WMI_PROPERTY_SIZE].type;
+	switch (type) {
+	case ACPI_TYPE_INTEGER:
+		is_new = true;
+		last_prop = HP_WMI_PROPERTY_RATE_UNITS;
+		break;
 
+	case ACPI_TYPE_STRING:
+		is_new = false;
+		last_prop = HP_WMI_PROPERTY_CURRENT_READING;
+		break;
+
+	default:
+		return -EINVAL;
+	}
+
+	/*
+	 * In general, the count of PossibleStates[] must be > 0.
+	 * Also, the old variant lacks the Size property, so we may need to
+	 * reduce the value of last_prop by 1 when doing arithmetic with it.
+	 */
+	if (elem_count < last_prop - !is_new + 1)
+		return -EINVAL;
+
+	count = elem_count - (last_prop - !is_new);
+
+	for (i = 0; i < elem_count && prop <= last_prop; i++, prop++) {
 		type = elements[i].type;
 		valid_type = hp_wmi_property_map[prop];
 		if (type != valid_type)
 			return -EINVAL;
 
-		/*
-		 * elements is a variable-length array of ACPI objects, one for
-		 * each property of the WMI object instance, except that the
-		 * strs in PossibleStates[] are flattened into this array, and
-		 * their count is found in the WMI BMOF. We don't decode the
-		 * BMOF, so find the count by finding the next int.
-		 */
+		switch (prop) {
+		case HP_WMI_PROPERTY_OPERATIONAL_STATUS:
+			/* Old variant: CurrentState follows OperationalStatus. */
+			if (!is_new)
+				prop = HP_WMI_PROPERTY_CURRENT_STATE - 1;
+			break;
 
-		if (prop == HP_WMI_PROPERTY_CURRENT_STATE) {
-			prop = HP_WMI_PROPERTY_POSSIBLE_STATES;
-			valid_type = hp_wmi_property_map[prop];
-			for (; i + 1 < elem_count; i++, count++) {
-				type = elements[i + 1].type;
+		case HP_WMI_PROPERTY_SIZE:
+			/* New variant: Size == count of PossibleStates[]. */
+			if (count != elements[i].integer.value)
+				return -EINVAL;
+			break;
+
+		case HP_WMI_PROPERTY_POSSIBLE_STATES:
+			/* PossibleStates[0] has already been type-checked. */
+			for (j = 0; i + 1 < elem_count && j + 1 < count; j++) {
+				type = elements[++i].type;
 				if (type != valid_type)
-					break;
+					return -EINVAL;
 			}
+
+			/* Old variant: BaseUnits follows PossibleStates[]. */
+			if (!is_new)
+				prop = HP_WMI_PROPERTY_BASE_UNITS - 1;
+			break;
+
+		case HP_WMI_PROPERTY_CURRENT_STATE:
+			/* Old variant: PossibleStates[] follows CurrentState. */
+			if (!is_new)
+				prop = HP_WMI_PROPERTY_POSSIBLE_STATES - 1;
+			break;
 		}
 	}
 
-	if (!count || prop <= HP_WMI_PROPERTY_CURRENT_READING)
+	if (prop != last_prop + 1)
 		return -EINVAL;
 
-	*possible_states_count = count;
+	*out_size = count;
+	*out_is_new = is_new;
 
 	return 0;
 }
@@ -694,32 +751,36 @@ static int classify_numeric_sensor(const struct hp_wmi_numeric_sensor *nsensor)
 static int
 populate_numeric_sensor_from_wobj(struct device *dev,
 				  struct hp_wmi_numeric_sensor *nsensor,
-				  union acpi_object *wobj)
+				  union acpi_object *wobj, bool *out_is_new)
 {
+	int last_prop = HP_WMI_PROPERTY_RATE_UNITS;
+	int prop = HP_WMI_PROPERTY_NAME;
 	const char **possible_states;
 	union acpi_object *element;
-	u8 possible_states_count;
 	acpi_object_type type;
 	char *string;
+	bool is_new;
 	u32 value;
-	int prop;
+	u8 size;
 	int err;
 
-	err = check_numeric_sensor_wobj(wobj, &possible_states_count);
+	err = check_numeric_sensor_wobj(wobj, &size, &is_new);
 	if (err)
 		return err;
 
-	possible_states = devm_kcalloc(dev, possible_states_count,
-				       sizeof(*possible_states),
+	possible_states = devm_kcalloc(dev, size, sizeof(*possible_states),
 				       GFP_KERNEL);
 	if (!possible_states)
 		return -ENOMEM;
 
 	element = wobj->package.elements;
 	nsensor->possible_states = possible_states;
-	nsensor->possible_states_count = possible_states_count;
+	nsensor->size = size;
 
-	for (prop = 0; prop <= HP_WMI_PROPERTY_CURRENT_READING; prop++) {
+	if (!is_new)
+		last_prop = HP_WMI_PROPERTY_CURRENT_READING;
+
+	for (; prop <= last_prop; prop++) {
 		type = hp_wmi_property_map[prop];
 
 		err = extract_acpi_value(dev, element, type, &value, &string);
@@ -750,16 +811,31 @@ populate_numeric_sensor_from_wobj(struct device *dev,
 
 		case HP_WMI_PROPERTY_OPERATIONAL_STATUS:
 			nsensor->operational_status = value;
+
+			/* Old variant: CurrentState follows OperationalStatus. */
+			if (!is_new)
+				prop = HP_WMI_PROPERTY_CURRENT_STATE - 1;
+			break;
+
+		case HP_WMI_PROPERTY_SIZE:
+			break;		/* Already set. */
+
+		case HP_WMI_PROPERTY_POSSIBLE_STATES:
+			*possible_states++ = string;
+			if (--size)
+				prop--;
+
+			/* Old variant: BaseUnits follows PossibleStates[]. */
+			if (!is_new && !size)
+				prop = HP_WMI_PROPERTY_BASE_UNITS - 1;
 			break;
 
 		case HP_WMI_PROPERTY_CURRENT_STATE:
 			nsensor->current_state = string;
-			break;
 
-		case HP_WMI_PROPERTY_POSSIBLE_STATES:
-			*possible_states++ = string;
-			if (--possible_states_count)
-				prop--;
+			/* Old variant: PossibleStates[] follows CurrentState. */
+			if (!is_new)
+				prop = HP_WMI_PROPERTY_POSSIBLE_STATES - 1;
 			break;
 
 		case HP_WMI_PROPERTY_BASE_UNITS:
@@ -775,10 +851,16 @@ populate_numeric_sensor_from_wobj(struct device *dev,
 			nsensor->current_reading = value;
 			break;
 
+		case HP_WMI_PROPERTY_RATE_UNITS:
+			nsensor->rate_units = value;
+			break;
+
 		default:
 			return -EINVAL;
 		}
 	}
+
+	*out_is_new = is_new;
 
 	return 0;
 }
@@ -792,14 +874,29 @@ update_numeric_sensor_from_wobj(struct device *dev,
 	const union acpi_object *elements;
 	const union acpi_object *element;
 	const char *string;
-	u8 offset;
+	bool is_new;
+	int offset;
+	u8 size;
+	int err;
+
+	err = check_numeric_sensor_wobj(wobj, &size, &is_new);
+	if (err)
+		return;
 
 	elements = wobj->package.elements;
 
 	element = &elements[HP_WMI_PROPERTY_OPERATIONAL_STATUS];
 	nsensor->operational_status = element->integer.value;
 
-	element = &elements[HP_WMI_PROPERTY_CURRENT_STATE];
+	/*
+	 * In general, an index offset is needed after PossibleStates[0].
+	 * On a new variant, CurrentState is after PossibleStates[]. This is
+	 * not the case on an old variant, but we still need to offset the
+	 * read because CurrentState is where Size would be on a new variant.
+	 */
+	offset = is_new ? size - 1 : -2;
+
+	element = &elements[HP_WMI_PROPERTY_CURRENT_STATE + offset];
 	string = strim(element->string.pointer);
 
 	if (strcmp(string, nsensor->current_state)) {
@@ -807,8 +904,9 @@ update_numeric_sensor_from_wobj(struct device *dev,
 		nsensor->current_state = hp_wmi_strdup(dev, string);
 	}
 
-	/* Offset reads into the elements array after PossibleStates[0]. */
-	offset = nsensor->possible_states_count - 1;
+	/* Old variant: -2 (not -1) because it lacks the Size property. */
+	if (!is_new)
+		offset = (int)size - 2;	/* size is > 0, i.e. may be 1. */
 
 	element = &elements[HP_WMI_PROPERTY_UNIT_MODIFIER + offset];
 	nsensor->unit_modifier = (s32)element->integer.value;
@@ -1106,7 +1204,7 @@ static int possible_states_show(struct seq_file *seqf, void *ignored)
 	struct hp_wmi_numeric_sensor *nsensor = seqf->private;
 	u8 i;
 
-	for (i = 0; i < nsensor->possible_states_count; i++)
+	for (i = 0; i < nsensor->size; i++)
 		seq_printf(seqf, "%s%s", i ? "," : "",
 			   nsensor->possible_states[i]);
 
@@ -1137,7 +1235,7 @@ static void hp_wmi_devm_debugfs_remove(void *res)
 /* hp_wmi_debugfs_init - create and populate debugfs directory tree */
 static void hp_wmi_debugfs_init(struct device *dev, struct hp_wmi_info *info,
 				struct hp_wmi_platform_events *pevents,
-				u8 icount, u8 pcount)
+				u8 icount, u8 pcount, bool is_new)
 {
 	struct hp_wmi_numeric_sensor *nsensor;
 	char buf[HP_WMI_MAX_STR_SIZE];
@@ -1185,11 +1283,11 @@ static void hp_wmi_debugfs_init(struct device *dev, struct hp_wmi_info *info,
 		debugfs_create_file("operational_status", 0444, dir,
 				    info, &operational_status_fops);
 
-		debugfs_create_file("current_state", 0444, dir,
-				    info, &current_state_fops);
-
 		debugfs_create_file("possible_states", 0444, dir,
 				    nsensor, &possible_states_fops);
+
+		debugfs_create_file("current_state", 0444, dir,
+				    info, &current_state_fops);
 
 		debugfs_create_u32("base_units", 0444, dir,
 				   &nsensor->base_units);
@@ -1199,6 +1297,10 @@ static void hp_wmi_debugfs_init(struct device *dev, struct hp_wmi_info *info,
 
 		debugfs_create_file("current_reading", 0444, dir,
 				    info, &current_reading_fops);
+
+		if (is_new)
+			debugfs_create_u32("rate_units", 0444, dir,
+					   &nsensor->rate_units);
 	}
 
 	entries = debugfs_create_dir("platform_events", debugfs);
@@ -1238,7 +1340,7 @@ static void hp_wmi_debugfs_init(struct device *dev, struct hp_wmi_info *info,
 
 static void hp_wmi_debugfs_init(struct device *dev, struct hp_wmi_info *info,
 				struct hp_wmi_platform_events *pevents,
-				u8 icount, u8 pcount)
+				u8 icount, u8 pcount, bool is_new)
 {
 }
 
@@ -1541,7 +1643,8 @@ static int init_platform_events(struct device *dev,
 static int init_numeric_sensors(struct hp_wmi_sensors *state,
 				struct hp_wmi_info *connected[],
 				struct hp_wmi_info **out_info,
-				u8 *out_icount, u8 *out_count)
+				u8 *out_icount, u8 *out_count,
+				bool *out_is_new)
 {
 	struct hp_wmi_info ***info_map = state->info_map;
 	u8 *channel_count = state->channel_count;
@@ -1553,6 +1656,7 @@ static int init_numeric_sensors(struct hp_wmi_sensors *state,
 	struct hp_wmi_info *info;
 	union acpi_object *wobj;
 	u8 count = 0;
+	bool is_new;
 	u8 icount;
 	int wtype;
 	int err;
@@ -1576,7 +1680,8 @@ static int init_numeric_sensors(struct hp_wmi_sensors *state,
 		info->state = state;
 		nsensor = &info->nsensor;
 
-		err = populate_numeric_sensor_from_wobj(dev, nsensor, wobj);
+		err = populate_numeric_sensor_from_wobj(dev, nsensor, wobj,
+							&is_new);
 
 		kfree(wobj);
 
@@ -1622,6 +1727,7 @@ static int init_numeric_sensors(struct hp_wmi_sensors *state,
 	*out_info = info_arr;
 	*out_icount = icount;
 	*out_count = count;
+	*out_is_new = is_new;
 
 	return 0;
 }
@@ -1826,6 +1932,7 @@ static int hp_wmi_sensors_init(struct hp_wmi_sensors *state)
 	struct hp_wmi_info *info;
 	struct device *hwdev;
 	bool has_events;
+	bool is_new;
 	u8 icount;
 	u8 pcount;
 	u8 count;
@@ -1835,11 +1942,12 @@ static int hp_wmi_sensors_init(struct hp_wmi_sensors *state)
 	if (err)
 		return err;
 
-	err = init_numeric_sensors(state, connected, &info, &icount, &count);
+	err = init_numeric_sensors(state, connected, &info,
+				   &icount, &count, &is_new);
 	if (err)
 		return err;
 
-	hp_wmi_debugfs_init(dev, info, pevents, icount, pcount);
+	hp_wmi_debugfs_init(dev, info, pevents, icount, pcount, is_new);
 
 	if (!count)
 		return 0; /* Not an error, but debugfs only. */
