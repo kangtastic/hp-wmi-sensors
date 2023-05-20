@@ -15,6 +15,8 @@
  * [3] Linux Hardware Project, A. Ponomarenko et al.,
  *     "linuxhw/ACPI - Collect ACPI table dumps", 2018. [Online].
  *     Available: https://github.com/linuxhw/ACPI/
+ * [4] P. Rohár, "bmfdec - Decompile binary MOF file (BMF) from WMI buffer",
+ *     2017. [Online]. Available: https://github.com/pali/bmfdec
  */
 
 #include <linux/acpi.h>
@@ -1441,11 +1443,18 @@ static void hp_wmi_notify(u32 value, void *context)
 	 *   ACPI Warning: \_SB.WMID._WED: Return type mismatch -
 	 *     found Package, expected Integer/String/Buffer
 	 *
-	 * Non-business-class HP systems have the same WMI event GUID. Per the
-	 * existing hp-wmi driver, the event data on those systems is indeed
-	 * an ACPI_BUFFER containing a raw struct of 8 or 16 bytes. Because we
-	 * validate the event data to ensure it is an ACPI_PACKAGE containing
-	 * a HPBIOS_BIOSEvent instance, we need not concern ourselves.
+	 * After using [4] to decode BMOF blobs found in [3], careless copying
+	 * of BIOS code seems the most likely explanation for this warning.
+	 * HP_WMI_EVENT_GUID refers to \\.\root\WMI\HPBIOS_BIOSEvent on
+	 * business-class systems, but it refers to \\.\root\WMI\hpqBEvnt on
+	 * non-business-class systems. Per the existing hp-wmi driver, it
+	 * looks like an instance of hpqBEvnt delivered as event data may
+	 * indeed take the form of a raw ACPI_BUFFER on non-business-class
+	 * systems ("may" because ASL shows some BIOSes do strange things).
+	 *
+	 * In any case, we can ignore this warning, because we always validate
+	 * the event data to ensure it is an ACPI_PACKAGE containing a
+	 * HPBIOS_BIOSEvent instance.
 	 */
 
 	mutex_lock(&state->lock);
