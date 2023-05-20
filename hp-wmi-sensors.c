@@ -1303,6 +1303,9 @@ static void hp_wmi_debugfs_init(struct device *dev, struct hp_wmi_info *info,
 					   &nsensor->rate_units);
 	}
 
+	if (!pcount)
+		return;
+
 	entries = debugfs_create_dir("platform_events", debugfs);
 
 	for (i = 0; i < pcount; i++, pevents++) {
@@ -1614,6 +1617,13 @@ static int init_platform_events(struct device *dev,
 	u8 i;
 
 	count = hp_wmi_wobj_instance_count(HP_WMI_PLATFORM_EVENTS_GUID);
+	if (!count) {
+		*out_pcount = 0;
+
+		dev_dbg(dev, "No platform events\n");
+
+		return 0;
+	}
 
 	pevents_arr = devm_kcalloc(dev, count, sizeof(*pevents), GFP_KERNEL);
 	if (!pevents_arr)
