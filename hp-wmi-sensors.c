@@ -14,7 +14,7 @@
  *     Available: http://h10032.www1.hp.com/ctg/Manual/c03291135.pdf
  * [3] Linux Hardware Project, A. Ponomarenko et al.,
  *     "linuxhw/ACPI - Collect ACPI table dumps", 2018. [Online].
- *     Available: https://github.com/linuxhw/ACPI/
+ *     Available: https://github.com/linuxhw/ACPI
  * [4] P. Rohár, "bmfdec - Decompile binary MOF file (BMF) from WMI buffer",
  *     2017. [Online]. Available: https://github.com/pali/bmfdec
  */
@@ -27,108 +27,108 @@
 #include <linux/units.h>
 #include <linux/wmi.h>
 
-#define HP_WMI_EVENT_NAMESPACE		 "root\\WMI"
-#define HP_WMI_EVENT_CLASS		 "HPBIOS_BIOSEvent"
-#define HP_WMI_EVENT_GUID		 "95F24279-4D7B-4334-9387-ACCDC67EF61C"
-#define HP_WMI_NUMERIC_SENSOR_GUID	 "8F1F6435-9F42-42C8-BADC-0E9424F20C9A"
-#define HP_WMI_PLATFORM_EVENTS_GUID	 "41227C2D-80E1-423F-8B8E-87E32755A0EB"
+#define HP_WMI_EVENT_NAMESPACE		"root\\WMI"
+#define HP_WMI_EVENT_CLASS		"HPBIOS_BIOSEvent"
+#define HP_WMI_EVENT_GUID		"95F24279-4D7B-4334-9387-ACCDC67EF61C"
+#define HP_WMI_NUMERIC_SENSOR_GUID	"8F1F6435-9F42-42C8-BADC-0E9424F20C9A"
+#define HP_WMI_PLATFORM_EVENTS_GUID	"41227C2D-80E1-423F-8B8E-87E32755A0EB"
 
 /* Patterns for recognizing sensors and matching events to channels. */
 
-#define HP_WMI_PATTERN_SYS_TEMP2	 "System Ambient Temperature"
-#define HP_WMI_PATTERN_SYS_TEMP		 "Chassis Thermal Index"
-#define HP_WMI_PATTERN_CPU_TEMP		 "CPU Thermal Index"
-#define HP_WMI_PATTERN_CPU_TEMP2	 "CPU Temperature"
-#define HP_WMI_PATTERN_TEMP_SENSOR	 "Thermal Index"
-#define HP_WMI_PATTERN_TEMP_ALARM	 "Thermal Critical"
-#define HP_WMI_PATTERN_INTRUSION_ALARM	 "Hood Intrusion"
-#define HP_WMI_PATTERN_FAN_ALARM	 "Stall"
-#define HP_WMI_PATTERN_TEMP		 "Temperature"
-#define HP_WMI_PATTERN_CPU		 "CPU"
+#define HP_WMI_PATTERN_SYS_TEMP		"Chassis Thermal Index"
+#define HP_WMI_PATTERN_SYS_TEMP2	"System Ambient Temperature"
+#define HP_WMI_PATTERN_CPU_TEMP		"CPU Thermal Index"
+#define HP_WMI_PATTERN_CPU_TEMP2	"CPU Temperature"
+#define HP_WMI_PATTERN_TEMP_SENSOR	"Thermal Index"
+#define HP_WMI_PATTERN_TEMP_ALARM	"Thermal Critical"
+#define HP_WMI_PATTERN_INTRUSION_ALARM	"Hood Intrusion"
+#define HP_WMI_PATTERN_FAN_ALARM	"Stall"
+#define HP_WMI_PATTERN_TEMP		"Temperature"
+#define HP_WMI_PATTERN_CPU		"CPU"
 
 /* These limits are arbitrary. The WMI implementation may vary by system. */
 
-#define HP_WMI_MAX_STR_SIZE		 128U
-#define HP_WMI_MAX_PROPERTIES		 32U
-#define HP_WMI_MAX_INSTANCES		 32U
+#define HP_WMI_MAX_STR_SIZE		128U
+#define HP_WMI_MAX_PROPERTIES		32U
+#define HP_WMI_MAX_INSTANCES		32U
 
 enum hp_wmi_type {
-	HP_WMI_TYPE_OTHER			   = 1,
-	HP_WMI_TYPE_TEMPERATURE			   = 2,
-	HP_WMI_TYPE_VOLTAGE			   = 3,
-	HP_WMI_TYPE_CURRENT			   = 4,
-	HP_WMI_TYPE_AIR_FLOW			   = 12,
-	HP_WMI_TYPE_INTRUSION			   = 0xabadb01, /* Custom. */
+	HP_WMI_TYPE_OTHER			= 1,
+	HP_WMI_TYPE_TEMPERATURE			= 2,
+	HP_WMI_TYPE_VOLTAGE			= 3,
+	HP_WMI_TYPE_CURRENT			= 4,
+	HP_WMI_TYPE_AIR_FLOW			= 12,
+	HP_WMI_TYPE_INTRUSION			= 0xabadb01, /* Custom. */
 };
 
 enum hp_wmi_category {
-	HP_WMI_CATEGORY_SENSOR			   = 3,
+	HP_WMI_CATEGORY_SENSOR			= 3,
 };
 
 enum hp_wmi_severity {
-	HP_WMI_SEVERITY_UNKNOWN			   = 0,
-	HP_WMI_SEVERITY_OK			   = 5,
-	HP_WMI_SEVERITY_DEGRADED_WARNING	   = 10,
-	HP_WMI_SEVERITY_MINOR_FAILURE		   = 15,
-	HP_WMI_SEVERITY_MAJOR_FAILURE		   = 20,
-	HP_WMI_SEVERITY_CRITICAL_FAILURE	   = 25,
-	HP_WMI_SEVERITY_NON_RECOVERABLE_ERROR	   = 30,
+	HP_WMI_SEVERITY_UNKNOWN			= 0,
+	HP_WMI_SEVERITY_OK			= 5,
+	HP_WMI_SEVERITY_DEGRADED_WARNING	= 10,
+	HP_WMI_SEVERITY_MINOR_FAILURE		= 15,
+	HP_WMI_SEVERITY_MAJOR_FAILURE		= 20,
+	HP_WMI_SEVERITY_CRITICAL_FAILURE	= 25,
+	HP_WMI_SEVERITY_NON_RECOVERABLE_ERROR	= 30,
 };
 
 enum hp_wmi_status {
-	HP_WMI_STATUS_OK			   = 2,
-	HP_WMI_STATUS_DEGRADED			   = 3,
-	HP_WMI_STATUS_STRESSED			   = 4,
-	HP_WMI_STATUS_PREDICTIVE_FAILURE	   = 5,
-	HP_WMI_STATUS_ERROR			   = 6,
-	HP_WMI_STATUS_NON_RECOVERABLE_ERROR	   = 7,
-	HP_WMI_STATUS_NO_CONTACT		   = 12,
-	HP_WMI_STATUS_LOST_COMMUNICATION	   = 13,
-	HP_WMI_STATUS_ABORTED			   = 14,
-	HP_WMI_STATUS_SUPPORTING_ENTITY_IN_ERROR   = 16,
+	HP_WMI_STATUS_OK			= 2,
+	HP_WMI_STATUS_DEGRADED			= 3,
+	HP_WMI_STATUS_STRESSED			= 4,
+	HP_WMI_STATUS_PREDICTIVE_FAILURE	= 5,
+	HP_WMI_STATUS_ERROR			= 6,
+	HP_WMI_STATUS_NON_RECOVERABLE_ERROR	= 7,
+	HP_WMI_STATUS_NO_CONTACT		= 12,
+	HP_WMI_STATUS_LOST_COMMUNICATION	= 13,
+	HP_WMI_STATUS_ABORTED			= 14,
+	HP_WMI_STATUS_SUPPORTING_ENTITY_IN_ERROR = 16,
 
 	/* Occurs combined with one of "OK", "Degraded", and "Error" [1]. */
-	HP_WMI_STATUS_COMPLETED			   = 17,
+	HP_WMI_STATUS_COMPLETED			= 17,
 };
 
 enum hp_wmi_units {
-	HP_WMI_UNITS_OTHER			   = 1,
-	HP_WMI_UNITS_DEGREES_C			   = 2,
-	HP_WMI_UNITS_DEGREES_F			   = 3,
-	HP_WMI_UNITS_DEGREES_K			   = 4,
-	HP_WMI_UNITS_VOLTS			   = 5,
-	HP_WMI_UNITS_AMPS			   = 6,
-	HP_WMI_UNITS_RPM			   = 19,
+	HP_WMI_UNITS_OTHER			= 1,
+	HP_WMI_UNITS_DEGREES_C			= 2,
+	HP_WMI_UNITS_DEGREES_F			= 3,
+	HP_WMI_UNITS_DEGREES_K			= 4,
+	HP_WMI_UNITS_VOLTS			= 5,
+	HP_WMI_UNITS_AMPS			= 6,
+	HP_WMI_UNITS_RPM			= 19,
 };
 
 enum hp_wmi_property {
-	HP_WMI_PROPERTY_NAME			   = 0,
-	HP_WMI_PROPERTY_DESCRIPTION		   = 1,
-	HP_WMI_PROPERTY_SENSOR_TYPE		   = 2,
-	HP_WMI_PROPERTY_OTHER_SENSOR_TYPE	   = 3,
-	HP_WMI_PROPERTY_OPERATIONAL_STATUS	   = 4,
-	HP_WMI_PROPERTY_SIZE			   = 5,
-	HP_WMI_PROPERTY_POSSIBLE_STATES		   = 6,
-	HP_WMI_PROPERTY_CURRENT_STATE		   = 7,
-	HP_WMI_PROPERTY_BASE_UNITS		   = 8,
-	HP_WMI_PROPERTY_UNIT_MODIFIER		   = 9,
-	HP_WMI_PROPERTY_CURRENT_READING		   = 10,
-	HP_WMI_PROPERTY_RATE_UNITS		   = 11,
+	HP_WMI_PROPERTY_NAME			= 0,
+	HP_WMI_PROPERTY_DESCRIPTION		= 1,
+	HP_WMI_PROPERTY_SENSOR_TYPE		= 2,
+	HP_WMI_PROPERTY_OTHER_SENSOR_TYPE	= 3,
+	HP_WMI_PROPERTY_OPERATIONAL_STATUS	= 4,
+	HP_WMI_PROPERTY_SIZE			= 5,
+	HP_WMI_PROPERTY_POSSIBLE_STATES		= 6,
+	HP_WMI_PROPERTY_CURRENT_STATE		= 7,
+	HP_WMI_PROPERTY_BASE_UNITS		= 8,
+	HP_WMI_PROPERTY_UNIT_MODIFIER		= 9,
+	HP_WMI_PROPERTY_CURRENT_READING		= 10,
+	HP_WMI_PROPERTY_RATE_UNITS		= 11,
 };
 
 static const acpi_object_type hp_wmi_property_map[] = {
-	[HP_WMI_PROPERTY_NAME]			   = ACPI_TYPE_STRING,
-	[HP_WMI_PROPERTY_DESCRIPTION]		   = ACPI_TYPE_STRING,
-	[HP_WMI_PROPERTY_SENSOR_TYPE]		   = ACPI_TYPE_INTEGER,
-	[HP_WMI_PROPERTY_OTHER_SENSOR_TYPE]	   = ACPI_TYPE_STRING,
-	[HP_WMI_PROPERTY_OPERATIONAL_STATUS]	   = ACPI_TYPE_INTEGER,
-	[HP_WMI_PROPERTY_SIZE]			   = ACPI_TYPE_INTEGER,
-	[HP_WMI_PROPERTY_POSSIBLE_STATES]	   = ACPI_TYPE_STRING,
-	[HP_WMI_PROPERTY_CURRENT_STATE]		   = ACPI_TYPE_STRING,
-	[HP_WMI_PROPERTY_BASE_UNITS]		   = ACPI_TYPE_INTEGER,
-	[HP_WMI_PROPERTY_UNIT_MODIFIER]		   = ACPI_TYPE_INTEGER,
-	[HP_WMI_PROPERTY_CURRENT_READING]	   = ACPI_TYPE_INTEGER,
-	[HP_WMI_PROPERTY_RATE_UNITS]		   = ACPI_TYPE_INTEGER,
+	[HP_WMI_PROPERTY_NAME]			= ACPI_TYPE_STRING,
+	[HP_WMI_PROPERTY_DESCRIPTION]		= ACPI_TYPE_STRING,
+	[HP_WMI_PROPERTY_SENSOR_TYPE]		= ACPI_TYPE_INTEGER,
+	[HP_WMI_PROPERTY_OTHER_SENSOR_TYPE]	= ACPI_TYPE_STRING,
+	[HP_WMI_PROPERTY_OPERATIONAL_STATUS]	= ACPI_TYPE_INTEGER,
+	[HP_WMI_PROPERTY_SIZE]			= ACPI_TYPE_INTEGER,
+	[HP_WMI_PROPERTY_POSSIBLE_STATES]	= ACPI_TYPE_STRING,
+	[HP_WMI_PROPERTY_CURRENT_STATE]		= ACPI_TYPE_STRING,
+	[HP_WMI_PROPERTY_BASE_UNITS]		= ACPI_TYPE_INTEGER,
+	[HP_WMI_PROPERTY_UNIT_MODIFIER]		= ACPI_TYPE_INTEGER,
+	[HP_WMI_PROPERTY_CURRENT_READING]	= ACPI_TYPE_INTEGER,
+	[HP_WMI_PROPERTY_RATE_UNITS]		= ACPI_TYPE_INTEGER,
 };
 
 enum hp_wmi_platform_events_property {
@@ -152,26 +152,26 @@ static const acpi_object_type hp_wmi_platform_events_property_map[] = {
 };
 
 enum hp_wmi_event_property {
-	HP_WMI_EVENT_PROPERTY_NAME		   = 0,
-	HP_WMI_EVENT_PROPERTY_DESCRIPTION	   = 1,
-	HP_WMI_EVENT_PROPERTY_CATEGORY		   = 2,
-	HP_WMI_EVENT_PROPERTY_SEVERITY		   = 3,
-	HP_WMI_EVENT_PROPERTY_STATUS		   = 4,
+	HP_WMI_EVENT_PROPERTY_NAME		= 0,
+	HP_WMI_EVENT_PROPERTY_DESCRIPTION	= 1,
+	HP_WMI_EVENT_PROPERTY_CATEGORY		= 2,
+	HP_WMI_EVENT_PROPERTY_SEVERITY		= 3,
+	HP_WMI_EVENT_PROPERTY_STATUS		= 4,
 };
 
 static const acpi_object_type hp_wmi_event_property_map[] = {
-	[HP_WMI_EVENT_PROPERTY_NAME]		   = ACPI_TYPE_STRING,
-	[HP_WMI_EVENT_PROPERTY_DESCRIPTION]	   = ACPI_TYPE_STRING,
-	[HP_WMI_EVENT_PROPERTY_CATEGORY]	   = ACPI_TYPE_INTEGER,
-	[HP_WMI_EVENT_PROPERTY_SEVERITY]	   = ACPI_TYPE_INTEGER,
-	[HP_WMI_EVENT_PROPERTY_STATUS]		   = ACPI_TYPE_INTEGER,
+	[HP_WMI_EVENT_PROPERTY_NAME]		= ACPI_TYPE_STRING,
+	[HP_WMI_EVENT_PROPERTY_DESCRIPTION]	= ACPI_TYPE_STRING,
+	[HP_WMI_EVENT_PROPERTY_CATEGORY]	= ACPI_TYPE_INTEGER,
+	[HP_WMI_EVENT_PROPERTY_SEVERITY]	= ACPI_TYPE_INTEGER,
+	[HP_WMI_EVENT_PROPERTY_STATUS]		= ACPI_TYPE_INTEGER,
 };
 
 static const enum hwmon_sensor_types hp_wmi_hwmon_type_map[] = {
-	[HP_WMI_TYPE_TEMPERATURE]		   = hwmon_temp,
-	[HP_WMI_TYPE_VOLTAGE]			   = hwmon_in,
-	[HP_WMI_TYPE_CURRENT]			   = hwmon_curr,
-	[HP_WMI_TYPE_AIR_FLOW]			   = hwmon_fan,
+	[HP_WMI_TYPE_TEMPERATURE]		= hwmon_temp,
+	[HP_WMI_TYPE_VOLTAGE]			= hwmon_in,
+	[HP_WMI_TYPE_CURRENT]			= hwmon_curr,
+	[HP_WMI_TYPE_AIR_FLOW]			= hwmon_fan,
 };
 
 static const u32 hp_wmi_hwmon_attributes[hwmon_max] = {
@@ -263,9 +263,9 @@ struct hp_wmi_numeric_sensor {
 	const char *name;
 	const char *description;
 	u32 sensor_type;
-	const char *other_sensor_type; /* Explains "Other" SensorType. */
+	const char *other_sensor_type;	/* Explains "Other" SensorType. */
 	u32 operational_status;
-	u8 size;		       /* Count of PossibleStates[]. */
+	u8 size;			/* Count of PossibleStates[]. */
 	const char **possible_states;
 	const char *current_state;
 	u32 base_units;
@@ -367,12 +367,12 @@ struct hp_wmi_event {
 struct hp_wmi_info {
 	struct hp_wmi_numeric_sensor nsensor;
 	u8 instance;
-	void *state; /* void *: avoid forward declaration */
+	void *state;			/* void *: Avoid forward declaration. */
 	bool has_alarm;
 	bool alarm;
 	enum hwmon_sensor_types type;
 	long cached_val;
-	unsigned long last_updated; /* in jiffies */
+	unsigned long last_updated;	/* In jiffies. */
 
 };
 
@@ -392,7 +392,7 @@ struct hp_wmi_sensors {
 	bool has_intrusion;
 	bool intrusion;
 
-	struct mutex lock; /* lock polling WMI, driver state changes */
+	struct mutex lock;	/* Lock polling WMI and driver state changes. */
 };
 
 /* hp_wmi_strdup - devm_kstrdup, but length-limited */
@@ -418,7 +418,7 @@ static char *hp_wmi_strdup(struct device *dev, const char *src)
  * @instance: WMI object instance number
  *
  * Returns a new WMI object instance on success, or NULL on error.
- * Caller must kfree the result.
+ * Caller must kfree() the result.
  */
 static union acpi_object *hp_wmi_get_wobj(const char *guid, u8 instance)
 {
@@ -818,7 +818,7 @@ populate_numeric_sensor_from_wobj(struct device *dev,
 			break;
 
 		case HP_WMI_PROPERTY_SIZE:
-			break;		/* Already set. */
+			break;			/* Already set. */
 
 		case HP_WMI_PROPERTY_POSSIBLE_STATES:
 			*possible_states++ = string;
@@ -1487,7 +1487,7 @@ static u8 match_temp_events(struct hp_wmi_sensors *state,
 	bool is_sys;
 	u8 i;
 
-	/* Description either "CPU Thermal Index" or "Chassis Thermal Index". */
+	/* Description is either "CPU Thermal Index" or "Chassis Thermal Index". */
 
 	is_cpu = !strcmp(event_description, HP_WMI_PATTERN_CPU_TEMP);
 	is_sys = !strcmp(event_description, HP_WMI_PATTERN_SYS_TEMP);
@@ -1791,12 +1791,12 @@ static bool find_event_attributes(struct hp_wmi_sensors *state,
 	 *
 	 * Complications and limitations:
 	 *
-	 *   - Strings are freeform and may vary, cf. sensor Name "CPU0 Fan"
-	 *     on a Z420 vs. "CPU Fan Speed" on an EliteOne 800 G1.
-	 *   - Leading/trailing whitespace is a rare but real possibility [3].
-	 *   - The HPBIOS_PlatformEvents object may not exist or its instances
-	 *     may show that the system only has e.g. BIOS setting-related
-	 *     events (cf. the ProBook 4540s and ProBook 470 G0 [3]).
+	 * - Strings are freeform and may vary, cf. sensor Name "CPU0 Fan"
+	 *   on a Z420 vs. "CPU Fan Speed" on an EliteOne 800 G1.
+	 * - Leading/trailing whitespace is a rare but real possibility [3].
+	 * - The HPBIOS_PlatformEvents object may not exist or its instances
+	 *   may show that the system only has e.g. BIOS setting-related
+	 *   events (cf. the ProBook 4540s and ProBook 470 G0 [3]).
 	 */
 
 	struct hp_wmi_info *temp_info[HP_WMI_MAX_INSTANCES] = {};
@@ -1960,7 +1960,7 @@ static int hp_wmi_sensors_init(struct hp_wmi_sensors *state)
 	hp_wmi_debugfs_init(dev, info, pevents, icount, pcount, is_new);
 
 	if (!count)
-		return 0; /* Not an error, but debugfs only. */
+		return 0;	/* No connected sensors; debugfs only. */
 
 	has_events = find_event_attributes(state, pevents, pcount);
 
