@@ -70,7 +70,7 @@ all: modules
 
 # Targets for running make directly in the external module directory:
 # Add -g -DDEBUG to build a debug module
-HP_WMI_SENSORS_CFLAGS=-DHP_WMI_SENSORS_DRIVER_VERSION='\"$(DRIVER_VERSION)\"'
+override HP_WMI_SENSORS_CFLAGS += -DHP_WMI_SENSORS_DRIVER_VERSION='\"$(DRIVER_VERSION)\"'
 
 modules:
 	@$(MAKE) EXTRA_CFLAGS="$(HP_WMI_SENSORS_CFLAGS)" -C $(KERNEL_BUILD) M=$(CURDIR) $@
