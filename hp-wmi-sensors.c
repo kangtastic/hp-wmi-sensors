@@ -483,17 +483,19 @@ static int check_wobj(const union acpi_object *wobj,
 	return 0;
 }
 
-static int extract_acpi_value(struct device *dev, union acpi_object *element,
-			      acpi_object_type type, u32 *value, char **string)
+static int extract_acpi_value(struct device *dev,
+			      union acpi_object *element,
+			      acpi_object_type type,
+			      u32 *out_value, char **out_string)
 {
 	switch (type) {
 	case ACPI_TYPE_INTEGER:
-		*value = element->integer.value;
+		*out_value = element->integer.value;
 		break;
 
 	case ACPI_TYPE_STRING:
-		*string = hp_wmi_strdup(dev, strim(element->string.pointer));
-		if (!*string)
+		*out_string = hp_wmi_strdup(dev, strim(element->string.pointer));
+		if (!*out_string)
 			return -ENOMEM;
 		break;
 
@@ -1372,7 +1374,7 @@ static umode_t hp_wmi_hwmon_is_visible(const void *drvdata,
 }
 
 static int hp_wmi_hwmon_read(struct device *dev, enum hwmon_sensor_types type,
-			     u32 attr, int channel, long *val)
+			     u32 attr, int channel, long *out_val)
 {
 	struct hp_wmi_sensors *state = dev_get_drvdata(dev);
 	const struct hp_wmi_numeric_sensor *nsensor;
@@ -1380,7 +1382,7 @@ static int hp_wmi_hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 	int err;
 
 	if (type == hwmon_intrusion) {
-		*val = state->intrusion ? 1 : 0;
+		*out_val = state->intrusion ? 1 : 0;
 
 		return 0;
 	}
@@ -1389,7 +1391,7 @@ static int hp_wmi_hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 
 	if ((type == hwmon_temp && attr == hwmon_temp_alarm) ||
 	    (type == hwmon_fan  && attr == hwmon_fan_alarm)) {
-		*val = info->alarm ? 1 : 0;
+		*out_val = info->alarm ? 1 : 0;
 		info->alarm = false;
 
 		return 0;
@@ -1403,22 +1405,22 @@ static int hp_wmi_hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 
 	if ((type == hwmon_temp && attr == hwmon_temp_fault) ||
 	    (type == hwmon_fan  && attr == hwmon_fan_fault))
-		*val = numeric_sensor_has_fault(nsensor);
+		*out_val = numeric_sensor_has_fault(nsensor);
 	else
-		*val = info->cached_val;
+		*out_val = info->cached_val;
 
 	return 0;
 }
 
 static int hp_wmi_hwmon_read_string(struct device *dev,
 				    enum hwmon_sensor_types type, u32 attr,
-				    int channel, const char **str)
+				    int channel, const char **out_str)
 {
 	const struct hp_wmi_sensors *state = dev_get_drvdata(dev);
 	const struct hp_wmi_info *info;
 
 	info = state->info_map[type][channel];
-	*str = info->nsensor.name;
+	*out_str = info->nsensor.name;
 
 	return 0;
 }
