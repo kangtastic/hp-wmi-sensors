@@ -1430,8 +1430,8 @@ static int hp_wmi_hwmon_write(struct device *dev, enum hwmon_sensor_types type,
 {
 	struct hp_wmi_sensors *state = dev_get_drvdata(dev);
 
-	if (val || !state->intrusion)
-		return -EOPNOTSUPP;
+	if (val)
+		return -EINVAL;
 
 	mutex_lock(&state->lock);
 
