@@ -4,6 +4,28 @@
 Linux HP WMI Sensors Driver
 ===========================
 
+DRIVER HAS BEEN ACCEPTED INTO THE LINUX KERNEL
+==============================================
+
+**This driver has been officially accepted into the mainline Linux kernel
+since August 2023.**
+
+For users on Linux kernel 6.5 or later, the following should just work::
+
+  $ sudo modprobe hp-wmi-sensors
+
+(If applicable, uninstall the version from this repository first)::
+
+  $ sudo make dkms_clean
+
+As of August 2025, automatic loading at boot without a distribution-specific
+mechanism such as ``/etc/modules-load.d/`` is still not implemented, but it
+will eventually happen once changes occur in other parts of the kernel.
+
+This repository is now intended for kernels prior to 6.5, and it will be
+sporadically updated with backports from mainline that do not rely upon
+post-6.5 changes.
+
 Description
 ===========
 
